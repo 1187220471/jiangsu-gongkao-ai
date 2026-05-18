@@ -151,8 +151,8 @@ export default function Practice() {
             onClick={() => router.push('/')}
             className="flex items-center gap-2 text-slate-800"
           >
-            <span className="text-2xl">🐟</span>
-            <span className="font-bold">戴锦鲤面试训练</span>
+            <span className="text-2xl">🐻</span>
+            <span className="font-bold">独行侠波铁面试训练</span>
           </button>
           <div className="text-sm text-slate-500">
             {step === 'select' && '选择题型'}

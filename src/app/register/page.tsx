@@ -54,8 +54,8 @@ export default function Register() {
     <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <span className="text-4xl">🐟</span>
-          <h1 className="text-2xl font-bold text-slate-800 mt-2">戴锦鲤面试训练</h1>
+          <span className="text-4xl">🐻</span>
+          <h1 className="text-2xl font-bold text-slate-800 mt-2">独行侠波铁面试训练</h1>
           <p className="text-slate-500 mt-1">注册新账号</p>
         </div>
 

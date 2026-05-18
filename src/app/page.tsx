@@ -43,8 +43,8 @@ export default function Home() {
       <header className="bg-white shadow-sm">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">🐟</span>
-            <h1 className="text-xl font-bold text-slate-800">戴锦鲤面试训练</h1>
+            <span className="text-2xl">🐻</span>
+            <h1 className="text-xl font-bold text-slate-800">独行侠波铁面试训练</h1>
           </div>
           <div className="flex items-center gap-4">
             {user && (
@@ -73,7 +73,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mx-auto">
           <button
             onClick={() => router.push('/practice')}
             className="bg-primary-600 hover:bg-primary-700 text-white p-8 rounded-2xl shadow-lg transition-all hover:shadow-xl text-left group"
@@ -82,6 +82,17 @@ export default function Home() {
             <h3 className="text-xl font-bold mb-2">开始练习</h3>
             <p className="text-primary-100 text-sm">
               选择题型，随机出题，提交答案后AI智能批改
+            </p>
+          </button>
+
+          <button
+            onClick={() => router.push('/custom-question')}
+            className="bg-white hover:bg-slate-50 text-slate-800 p-8 rounded-2xl shadow-lg transition-all hover:shadow-xl text-left border border-slate-200 group"
+          >
+            <div className="text-4xl mb-4">✏️</div>
+            <h3 className="text-xl font-bold mb-2">自定义题目</h3>
+            <p className="text-slate-500 text-sm">
+              输入你自己的面试题，AI生成参考答案
             </p>
           </button>
 
