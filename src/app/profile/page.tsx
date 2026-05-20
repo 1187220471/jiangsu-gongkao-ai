@@ -228,7 +228,7 @@ export default function Profile() {
                 <span className="font-bold text-slate-700">普通用户</span>
               </div>
               <p className="text-sm text-slate-600">
-                每日免费 <strong>3</strong> 次AI练习，今日剩余{' '}
+                每日免费 <strong>5</strong> 次AI练习，今日剩余{' '}
                 <strong>{profile.membership.remainingFree}</strong> 次
               </p>
             </div>

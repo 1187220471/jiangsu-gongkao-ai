@@ -81,7 +81,7 @@ export default function Home() {
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-2xl">🐻</span>
-            <h1 className="text-xl font-bold text-slate-800">独行侠波铁面试训练</h1>
+            <h1 className="text-xl font-bold text-slate-800">江苏公务员面试答题训练</h1>
           </div>
           <div className="flex items-center gap-4">
             {getQuotaDisplay()}
@@ -152,19 +152,11 @@ export default function Home() {
         {/* 额度提示 */}
         {quota && !quota.isVip && (
           <div className="mt-8 bg-blue-50 rounded-xl p-4 border border-blue-200 max-w-3xl mx-auto">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">💡</span>
-                <span className="text-sm text-blue-800">
-                  每日免费 <strong>5</strong> 次AI练习，今日剩余 <strong>{quota.remainingFree}</strong> 次
-                </span>
-              </div>
-              <button
-                onClick={() => alert('付费功能即将上线，敬请期待！')}
-                className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg transition-colors"
-              >
-                获取更多额度
-              </button>
+            <div className="flex items-center gap-2">
+              <span className="text-lg">💡</span>
+              <span className="text-sm text-blue-800">
+                每日免费 <strong>5</strong> 次AI练习，今日剩余 <strong>{quota.remainingFree}</strong> 次
+              </span>
             </div>
           </div>
         )}

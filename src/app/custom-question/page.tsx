@@ -63,7 +63,7 @@ export default function CustomQuestion() {
             className="flex items-center gap-2 text-slate-800"
           >
             <span className="text-2xl">🐻</span>
-            <span className="font-bold">独行侠波铁面试训练</span>
+            <span className="font-bold">江苏公务员面试答题训练</span>
           </button>
           <div className="text-sm text-slate-500">自定义题目</div>
         </div>
@@ -75,7 +75,7 @@ export default function CustomQuestion() {
             输入你自己的面试题目
           </h2>
           <p className="text-slate-500 text-sm mb-4">
-            粘贴你收集到的面试真题或模拟题，AI 会按照独行侠波铁答题模板生成参考答案。
+            粘贴你收集到的面试真题或模拟题，AI 会按照政府公文语体风格生成参考答案。
           </p>
           <textarea
             value={question}

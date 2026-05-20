@@ -56,7 +56,7 @@ export default function Register() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <span className="text-4xl">🐻</span>
-          <h1 className="text-2xl font-bold text-slate-800 mt-2">独行侠波铁面试训练</h1>
+          <h1 className="text-2xl font-bold text-slate-800 mt-2">江苏公务员面试答题训练</h1>
           <p className="text-slate-500 mt-1">注册新账号</p>
         </div>
 
