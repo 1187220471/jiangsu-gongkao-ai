@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { generateQuestion } from '@/lib/ai'
 import { verifyToken, getTokenFromRequest } from '@/lib/auth'
+import { checkQuota, deductQuota } from '@/lib/quota'
 
 export async function POST(request: Request) {
   try {
@@ -29,11 +30,24 @@ export async function POST(request: Request) {
       )
     }
 
+    // 检查额度
+    const quota = await checkQuota(payload.userId)
+    if (!quota.allowed) {
+      return NextResponse.json(
+        { error: quota.message },
+        { status: 403 }
+      )
+    }
+
+    // 扣除额度
+    await deductQuota(payload.userId)
+
     const question = await generateQuestion(type)
 
     return NextResponse.json({
       question,
       type,
+      remainingFree: Math.max(0, quota.remainingFree - 1),
     })
   } catch (error) {
     console.error('Generate question error:', error)

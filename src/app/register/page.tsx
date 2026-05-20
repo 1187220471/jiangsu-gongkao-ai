@@ -9,6 +9,7 @@ export default function Register() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [nickname, setNickname] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -32,7 +33,7 @@ export default function Register() {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, nickname }),
+        body: JSON.stringify({ username, password, nickname, inviteCode }),
       })
 
       const data = await res.json()
@@ -102,7 +103,7 @@ export default function Register() {
               />
             </div>
 
-            <div className="mb-6">
+            <div className="mb-4">
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 确认密码 <span className="text-red-500">*</span>
               </label>
@@ -114,6 +115,22 @@ export default function Register() {
                 placeholder="再次输入密码"
                 required
               />
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                邀请码（可选）
+              </label>
+              <input
+                type="text"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                placeholder="有邀请码？输入即可开通会员"
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                输入邀请码可立即获得30天会员权限
+              </p>
             </div>
 
             {error && (

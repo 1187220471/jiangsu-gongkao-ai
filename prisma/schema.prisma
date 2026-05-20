@@ -8,10 +8,18 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  username  String   @unique
-  password  String
-  nickname  String?
+  id              String   @id @default(uuid())
+  username        String   @unique
+  password        String
+  nickname        String?
+
+  // 额度系统
+  dailyFreeCount    Int      @default(3)       // 每日剩余免费次数
+  freeCountResetAt  DateTime @default(now())   // 免费次数重置时间
+  coins             Int      @default(0)        // 练习币余额
+  vipType           String   @default("none")   // none / month / year
+  vipExpire         DateTime?                   // 会员过期时间
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -30,4 +38,23 @@ model Record {
   createdAt     DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model InvitationCode {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  type      String   @default("month")
+  used      Boolean  @default(false)
+  usedBy    String?
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+model Feedback {
+  id        String   @id @default(uuid())
+  userId    String
+  content   String
+  type      String   @default("其他")
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
 }

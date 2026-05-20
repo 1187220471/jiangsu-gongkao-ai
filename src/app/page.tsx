@@ -3,9 +3,17 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
+interface QuotaInfo {
+  isVip: boolean
+  vipType: string
+  remainingFree: number
+  coins: number
+}
+
 export default function Home() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
+  const [quota, setQuota] = useState<QuotaInfo | null>(null)
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -14,6 +22,7 @@ export default function Home() {
       return
     }
 
+    // 获取用户信息
     fetch('/api/auth/me', {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -30,11 +39,39 @@ export default function Home() {
         localStorage.removeItem('token')
         router.push('/login')
       })
+
+    // 获取额度信息
+    fetch('/api/quota', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.error) {
+          setQuota(data)
+        }
+      })
+      .catch(() => {})
   }, [router])
 
   const handleLogout = () => {
     localStorage.removeItem('token')
     router.push('/login')
+  }
+
+  const getQuotaDisplay = () => {
+    if (!quota) return null
+    if (quota.isVip) {
+      return (
+        <span className="text-sm bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">
+          ⭐ VIP会员
+        </span>
+      )
+    }
+    return (
+      <span className="text-sm bg-primary-50 text-primary-600 px-2 py-0.5 rounded-full">
+        今日剩余 {quota.remainingFree} 次
+      </span>
+    )
   }
 
   return (
@@ -47,10 +84,14 @@ export default function Home() {
             <h1 className="text-xl font-bold text-slate-800">独行侠波铁面试训练</h1>
           </div>
           <div className="flex items-center gap-4">
+            {getQuotaDisplay()}
             {user && (
-              <span className="text-sm text-slate-600">
+              <button
+                onClick={() => router.push('/profile')}
+                className="text-sm text-slate-600 hover:text-primary-600 transition-colors"
+              >
                 你好，{user.nickname || user.username}
-              </span>
+              </button>
             )}
             <button
               onClick={handleLogout}
@@ -108,7 +149,38 @@ export default function Home() {
           </button>
         </div>
 
-        <div className="mt-12 bg-white rounded-xl p-6 shadow-sm border border-slate-200 max-w-2xl mx-auto">
+        {/* 额度提示 */}
+        {quota && !quota.isVip && (
+          <div className="mt-8 bg-blue-50 rounded-xl p-4 border border-blue-200 max-w-3xl mx-auto">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">💡</span>
+                <span className="text-sm text-blue-800">
+                  每日免费 <strong>3</strong> 次AI练习，今日剩余 <strong>{quota.remainingFree}</strong> 次
+                </span>
+              </div>
+              <button
+                onClick={() => alert('付费功能即将上线，敬请期待！')}
+                className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg transition-colors"
+              >
+                获取更多额度
+              </button>
+            </div>
+          </div>
+        )}
+
+        {quota && quota.isVip && (
+          <div className="mt-8 bg-yellow-50 rounded-xl p-4 border border-yellow-200 max-w-3xl mx-auto">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">⭐</span>
+              <span className="text-sm text-yellow-800">
+                VIP会员，无限次使用，感谢您的支持！
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-8 bg-white rounded-xl p-6 shadow-sm border border-slate-200 max-w-2xl mx-auto">
           <h3 className="font-bold text-slate-800 mb-4">支持的题型</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {[

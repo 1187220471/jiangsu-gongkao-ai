@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db'
 
 export async function POST(request: Request) {
   try {
-    const { username, password, nickname } = await request.json()
+    const { username, password, nickname, inviteCode } = await request.json()
 
     if (!username || !password) {
       return NextResponse.json(
@@ -33,12 +33,47 @@ export async function POST(request: Request) {
 
     const hashedPassword = await bcrypt.hash(password, 10)
 
+    // 准备用户数据
+    const userData: any = {
+      username,
+      password: hashedPassword,
+      nickname: nickname || username,
+    }
+
+    // 如果有邀请码，校验并设置会员信息
+    let vipInfo = null
+    if (inviteCode && typeof inviteCode === 'string' && inviteCode.trim()) {
+      const code = inviteCode.trim().toUpperCase()
+      const invite = await prisma.invitationCode.findUnique({
+        where: { code },
+      })
+
+      if (invite && !invite.used) {
+        const now = new Date()
+        const expireDate = new Date(now)
+        expireDate.setDate(expireDate.getDate() + 30)
+
+        userData.vipType = 'month'
+        userData.vipExpire = expireDate
+
+        // 标记邀请码为已使用
+        await prisma.invitationCode.update({
+          where: { id: invite.id },
+          data: {
+            used: true,
+            usedAt: now,
+          },
+        })
+
+        vipInfo = {
+          vipType: 'month',
+          vipExpire: expireDate.toISOString().split('T')[0],
+        }
+      }
+    }
+
     const user = await prisma.user.create({
-      data: {
-        username,
-        password: hashedPassword,
-        nickname: nickname || username,
-      },
+      data: userData,
       select: {
         id: true,
         username: true,
@@ -47,8 +82,9 @@ export async function POST(request: Request) {
     })
 
     return NextResponse.json({
-      message: '注册成功',
+      message: vipInfo ? '注册成功，会员已开通！' : '注册成功',
       user,
+      vipInfo,
     })
   } catch (error) {
     console.error('Register error:', error)
