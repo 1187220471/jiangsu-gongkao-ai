@@ -14,7 +14,7 @@ model User {
   nickname        String?
 
   // 额度系统
-  dailyFreeCount    Int      @default(3)       // 每日剩余免费次数
+  dailyFreeCount    Int      @default(5)       // 每日剩余免费次数
   freeCountResetAt  DateTime @default(now())   // 免费次数重置时间
   coins             Int      @default(0)        // 练习币余额
   vipType           String   @default("none")   // none / month / year

@@ -9,7 +9,7 @@ export interface QuotaCheckResult {
 /**
  * 检查用户是否有额度调用AI服务
  * - VIP用户：无限次（在有效期内）
- * - 普通用户：每日3次免费，超出后需要付费
+ * - 普通用户：每日5次免费，超出后需要付费
  */
 export async function checkQuota(userId: string): Promise<QuotaCheckResult> {
   const user = await prisma.user.findUnique({
@@ -45,11 +45,11 @@ export async function checkQuota(userId: string): Promise<QuotaCheckResult> {
     await prisma.user.update({
       where: { id: userId },
       data: {
-        dailyFreeCount: 3,
+        dailyFreeCount: 5,
         freeCountResetAt: now,
       },
     })
-    return { allowed: true, remainingFree: 3, message: '今日免费额度已重置（3次）' }
+    return { allowed: true, remainingFree: 5, message: '今日免费额度已重置（5次）' }
   }
 
   // 3. 检查免费次数
@@ -74,7 +74,7 @@ export async function checkQuota(userId: string): Promise<QuotaCheckResult> {
   return {
     allowed: false,
     remainingFree: 0,
-    message: '今日免费次数已用完（3次/天），请联系老师充值',
+    message: '本日额度已用完。每日5次，明日自动恢复。',
   }
 }
 
@@ -145,7 +145,7 @@ export async function getQuotaInfo(userId: string) {
 
   let remainingFree = user.dailyFreeCount
   if (!isSameDay) {
-    remainingFree = 3 // 跨天了，还没重置，前端显示3次
+    remainingFree = 5 // 跨天了，还没重置，前端显示5次
   }
 
   const isVip = user.vipType !== 'none' && user.vipExpire && user.vipExpire > now

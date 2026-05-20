@@ -156,7 +156,7 @@ export default function Home() {
               <div className="flex items-center gap-2">
                 <span className="text-lg">💡</span>
                 <span className="text-sm text-blue-800">
-                  每日免费 <strong>3</strong> 次AI练习，今日剩余 <strong>{quota.remainingFree}</strong> 次
+                  每日免费 <strong>5</strong> 次AI练习，今日剩余 <strong>{quota.remainingFree}</strong> 次
                 </span>
               </div>
               <button

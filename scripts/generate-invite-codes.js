@@ -55,17 +55,16 @@ async function main() {
     }
   }
 
-  // 批量存入数据库
+  // 逐个存入数据库（create 会自动生成 id）
   const data = Array.from(codeSet).map((code) => ({
     code,
     type: 'month',
     used: false,
   }))
 
-  await prisma.invitationCode.createMany({
-    data,
-    skipDuplicates: true,
-  })
+  for (const item of data) {
+    await prisma.invitationCode.create({ data: item })
+  }
 
   console.log('✅ 邀请码生成成功！\n')
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
