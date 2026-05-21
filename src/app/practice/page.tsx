@@ -123,6 +123,10 @@ export default function Practice() {
         setEvaluation(data.evaluation)
         setScore(data.score)
         setImprovedAnswer(data.improvedAnswer || '')
+        // 如果后端同时返回了参考答案，自动设置（不额外消耗次数）
+        if (data.referenceAnswer) {
+          setReferenceAnswer(data.referenceAnswer)
+        }
         setStep('result')
       } else {
         alert(data.error || '批改失败')

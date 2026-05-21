@@ -20,6 +20,9 @@ model User {
   vipType           String   @default("none")   // none / month / year
   vipExpire         DateTime?                   // 会员过期时间
 
+  // 去重缓存：最近使用过的出题主题（JSON字符串数组）
+  recentTopics      String?  @default("[]")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

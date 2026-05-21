@@ -48,17 +48,21 @@ export async function POST(request: Request) {
     }
 
     const now = new Date()
-    let newExpireDate: Date
+
+    // 根据邀请码类型确定续费天数
+    const daysToAdd = inviteCode.type === 'year' ? 365 : 30
+    const typeLabel = inviteCode.type === 'year' ? '年度会员' : '月度会员'
 
     // 续费逻辑：已过期从当天起算，未过期则顺延
+    let newExpireDate: Date
     if (user.vipExpire && user.vipExpire > now) {
-      // 未过期，在现有到期日基础上顺延30天
+      // 未过期，在现有到期日基础上顺延
       newExpireDate = new Date(user.vipExpire)
-      newExpireDate.setDate(newExpireDate.getDate() + 30)
+      newExpireDate.setDate(newExpireDate.getDate() + daysToAdd)
     } else {
-      // 已过期或从未开过，从当天起算30天
+      // 已过期或从未开过，从当天起算
       newExpireDate = new Date(now)
-      newExpireDate.setDate(newExpireDate.getDate() + 30)
+      newExpireDate.setDate(newExpireDate.getDate() + daysToAdd)
     }
 
     // 事务：更新邀请码状态 + 更新用户会员信息
@@ -74,15 +78,15 @@ export async function POST(request: Request) {
       prisma.user.update({
         where: { id: user.id },
         data: {
-          vipType: 'month',
+          vipType: inviteCode.type,
           vipExpire: newExpireDate,
         },
       }),
     ])
 
     return NextResponse.json({
-      message: '会员开通成功',
-      vipType: 'month',
+      message: `${typeLabel}开通成功`,
+      vipType: inviteCode.type,
       vipExpire: newExpireDate.toISOString().split('T')[0],
     })
   } catch (error) {

@@ -30,16 +30,24 @@ function generateUUID() {
 
 async function main() {
   const count = parseInt(process.argv[2], 10)
+  const type = process.argv[3] || 'month'
 
   if (!count || count <= 0) {
     console.log('❌ 请指定生成数量')
-    console.log('用法：node scripts/generate-invite-codes-neon.js <数量>')
+    console.log('用法：node scripts/generate-invite-codes-neon.js <数量> [类型]')
     console.log('示例：node scripts/generate-invite-codes-neon.js 10')
+    console.log('       node scripts/generate-invite-codes-neon.js 10 month')
+    console.log('       node scripts/generate-invite-codes-neon.js 10 year')
     process.exit(1)
   }
 
   if (count > 1000) {
     console.log('⚠️  一次最多生成1000个邀请码')
+    process.exit(1)
+  }
+
+  if (type !== 'month' && type !== 'year') {
+    console.log('❌ 邀请码类型只能是 month 或 year')
     process.exit(1)
   }
 
@@ -61,7 +69,8 @@ async function main() {
     process.exit(1)
   }
 
-  console.log(`🎯 准备生成 ${count} 个月卡邀请码并写入 Neon...\n`)
+  const typeLabel = type === 'year' ? '年卡' : '月卡'
+  console.log(`🎯 准备生成 ${count} 个${typeLabel}邀请码并写入 Neon...\n`)
 
   const client = new Client({ connectionString })
 
@@ -85,7 +94,7 @@ async function main() {
         codes.push({
           id: generateUUID(),
           code,
-          type: 'month',
+          type,
           used: false,
         })
       }
@@ -101,13 +110,14 @@ async function main() {
 
     console.log('✅ 邀请码生成成功并已写入 Neon！\n')
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('  序号  |  邀请码')
+    console.log('  序号  |  邀请码          |  类型')
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
     codes.forEach((item, index) => {
-      console.log(`  ${String(index + 1).padStart(3, '0')}   |  ${item.code}`)
+      const typeDisplay = item.type === 'year' ? '年卡' : '月卡'
+      console.log(`  ${String(index + 1).padStart(3, '0')}   |  ${item.code}  |  ${typeDisplay}`)
     })
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log(`\n📋 共生成 ${codes.length} 个月卡邀请码`)
+    console.log(`\n📋 共生成 ${codes.length} 个${typeLabel}邀请码`)
     console.log('💡 提示：邀请码为一次性使用，用户输入后即失效')
     console.log('🌐 现在去 Neon Tables 里刷新就能看到记录了')
   } catch (error) {

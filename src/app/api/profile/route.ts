@@ -42,7 +42,7 @@ export async function GET(request: Request) {
 
     let remainingFree = user.dailyFreeCount
     if (!isSameDay) {
-      remainingFree = 3
+      remainingFree = 5
     }
 
     const isVip = user.vipType !== 'none' && user.vipExpire && user.vipExpire > now

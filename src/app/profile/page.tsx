@@ -209,15 +209,17 @@ export default function Profile() {
           <h3 className="text-lg font-bold text-slate-800 mb-4">会员状态</h3>
 
           {profile.membership.isVip ? (
-            <div className="bg-yellow-50 rounded-xl p-4 border border-yellow-200">
+            <div className={`rounded-xl p-4 border ${profile.membership.vipType === 'year' ? 'bg-purple-50 border-purple-200' : 'bg-yellow-50 border-yellow-200'}`}>
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-2xl">⭐</span>
-                <span className="font-bold text-yellow-800">VIP会员</span>
+                <span className="text-2xl">{profile.membership.vipType === 'year' ? '👑' : '⭐'}</span>
+                <span className={`font-bold ${profile.membership.vipType === 'year' ? 'text-purple-800' : 'text-yellow-800'}`}>
+                  {profile.membership.vipType === 'year' ? '年度会员' : '月度会员'}
+                </span>
               </div>
-              <p className="text-sm text-yellow-700">
+              <p className={`text-sm ${profile.membership.vipType === 'year' ? 'text-purple-700' : 'text-yellow-700'}`}>
                 会员到期时间：{profile.membership.vipExpire}
               </p>
-              <p className="text-sm text-yellow-600 mt-1">
+              <p className={`text-sm mt-1 ${profile.membership.vipType === 'year' ? 'text-purple-600' : 'text-yellow-600'}`}>
                 无限次使用所有功能
               </p>
             </div>

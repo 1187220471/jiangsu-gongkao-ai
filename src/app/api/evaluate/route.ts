@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { evaluateAnswer } from '@/lib/ai'
+import { evaluateAnswer, generateReferenceAnswer } from '@/lib/ai'
 import { prisma } from '@/lib/db'
 import { verifyToken, getTokenFromRequest } from '@/lib/auth'
 import { checkQuota, deductQuota } from '@/lib/quota'
@@ -40,10 +40,21 @@ export async function POST(request: Request) {
       )
     }
 
-    // 扣除额度
+    // 扣除额度（仅批改扣次，查看参考答案不扣次）
     await deductQuota(payload.userId)
 
-    const result = await evaluateAnswer(question, referenceAnswer || '', userAnswer)
+    // 如果没有参考答案，并行生成（让用户在批改后直接看到，不额外消耗次数）
+    let finalReferenceAnswer = referenceAnswer || ''
+    if (!finalReferenceAnswer) {
+      try {
+        finalReferenceAnswer = await generateReferenceAnswer(question)
+      } catch (genErr) {
+        console.error('Generate reference answer during evaluate error:', genErr)
+        // 生成失败不影响批改，继续用空字符串
+      }
+    }
+
+    const result = await evaluateAnswer(question, finalReferenceAnswer, userAnswer)
 
     // 保存记录
     const record = await prisma.record.create({
@@ -51,7 +62,7 @@ export async function POST(request: Request) {
         userId: payload.userId,
         questionType: type || 'social',
         question,
-        referenceAnswer,
+        referenceAnswer: finalReferenceAnswer,
         userAnswer,
         evaluation: result.evaluation,
         score: result.score,
@@ -60,6 +71,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ...result,
+      referenceAnswer: finalReferenceAnswer,
       recordId: record.id,
       remainingFree: Math.max(0, quota.remainingFree - 1),
     })
