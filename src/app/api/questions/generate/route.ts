@@ -62,7 +62,7 @@ export async function POST(request: Request) {
 
     await prisma.user.update({
       where: { id: payload.userId },
-      data: { recentTopics: updatedTopics },
+      data: { recentTopics: JSON.stringify(updatedTopics) },
     })
 
     return NextResponse.json({
