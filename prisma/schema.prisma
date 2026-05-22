@@ -61,3 +61,13 @@ model Feedback {
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
 }
+
+model DailyNews {
+  id        Int      @id @default(autoincrement())
+  date      String   @unique // 格式: 2026-05-22
+  topNews   String   // JSON字符串: [{title, date, source, score, intro, topic, url}]
+  allNews   String?  // JSON字符串: 全部评分结果（可选）
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("daily_news")
+}
