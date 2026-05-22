@@ -11,6 +11,7 @@ const questionTypes = [
   { key: 'emergency', label: '应急应变类' },
   { key: 'relationship', label: '人际关系类' },
   { key: 'self', label: '自我认知类' },
+  { key: 'situational', label: '情景模拟类' },
 ] as const
 
 export default function Practice() {
@@ -195,6 +196,7 @@ export default function Practice() {
                     {type.key === 'emergency' && '🚨'}
                     {type.key === 'relationship' && '🤝'}
                     {type.key === 'self' && '👤'}
+                    {type.key === 'situational' && '🎭'}
                   </div>
                   <div className="font-medium">{type.label}</div>
                 </button>

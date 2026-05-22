@@ -22,6 +22,7 @@ export type QuestionType =
   | 'emergency'
   | 'relationship'
   | 'self'
+  | 'situational'
 
 export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   social: '社会现象类',
@@ -30,4 +31,5 @@ export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   emergency: '应急应变类',
   relationship: '人际关系类',
   self: '自我认知类',
+  situational: '情景模拟类',
 }

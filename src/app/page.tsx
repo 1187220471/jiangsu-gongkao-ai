@@ -182,6 +182,7 @@ export default function Home() {
               '应急应变类',
               '人际关系类',
               '自我认知类',
+              '情景模拟类',
             ].map((type) => (
               <div
                 key={type}
