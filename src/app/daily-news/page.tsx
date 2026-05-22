@@ -142,6 +142,39 @@ export default function DailyNewsPage() {
           </div>
         </div>
 
+        {/* 筛选标准 */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <h3 className="text-sm font-semibold text-gray-700">AI 筛选评分标准</h3>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+            <div className="bg-gray-50 rounded-lg p-2.5">
+              <div className="font-medium text-gray-800 mb-0.5">申论/面试相关度</div>
+              <div className="text-gray-500">权重 40%</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-2.5">
+              <div className="font-medium text-gray-800 mb-0.5">政策重要性</div>
+              <div className="text-gray-500">权重 25%</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-2.5">
+              <div className="font-medium text-gray-800 mb-0.5">时效性</div>
+              <div className="text-gray-500">权重 20%</div>
+            </div>
+            <div className="bg-gray-50 rounded-lg p-2.5">
+              <div className="font-medium text-gray-800 mb-0.5">信息密度</div>
+              <div className="text-gray-500">权重 15%</div>
+            </div>
+          </div>
+          <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500 space-y-1">
+            <p><span className="text-green-600 font-medium">加分项：</span>民生保障、产业创新、经济发展、文化繁荣、基层治理、长三角一体化（+1分）</p>
+            <p><span className="text-red-500 font-medium">降分项：</span>纯人事任免（-3分）、纯行政事务（-1分）</p>
+            <p><span className="text-gray-400">排除项：</span>娱乐八卦、体育赛事、商业广告、社会猎奇、天气预报、重复报道</p>
+          </div>
+        </div>
+
         {loading && (
           <div className="flex items-center justify-center py-20">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
