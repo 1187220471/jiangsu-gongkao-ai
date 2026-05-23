@@ -19,6 +19,12 @@ interface SetData {
   questions: QuestionItem[]
 }
 
+interface Evaluation {
+  score: number
+  evaluation: string
+  improvedAnswer: string
+}
+
 export default function SetResultPage() {
   const router = useRouter()
   const params = useParams()
@@ -27,6 +33,8 @@ export default function SetResultPage() {
   const [setData, setSetData] = useState<SetData | null>(null)
   const [userAnswers, setUserAnswers] = useState<Record<number, string>>({})
   const [refAnswers, setRefAnswers] = useState<Record<number, string>>({})
+  const [evaluations, setEvaluations] = useState<Record<number, Evaluation>>({})
+  const [totalScore, setTotalScore] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [downloading, setDownloading] = useState(false)
@@ -42,6 +50,7 @@ export default function SetResultPage() {
     const stored = localStorage.getItem('setTrainingData')
     const storedUserAnswers = localStorage.getItem(`setUserAnswers_${mode}`)
     const storedRefAnswers = localStorage.getItem(`setRefAnswers_${mode}`)
+    const storedEvaluations = localStorage.getItem(`setEvaluations_${mode}`)
 
     if (stored && storedUserAnswers && storedRefAnswers) {
       try {
@@ -50,6 +59,17 @@ export default function SetResultPage() {
           setSetData(data)
           setUserAnswers(JSON.parse(storedUserAnswers))
           setRefAnswers(JSON.parse(storedRefAnswers))
+
+          if (storedEvaluations) {
+            const evals = JSON.parse(storedEvaluations) as Record<number, Evaluation>
+            setEvaluations(evals)
+            // 计算套题总分（平均分）
+            const scores = Object.values(evals).map(e => e.score).filter(s => s > 0)
+            if (scores.length > 0) {
+              const avg = scores.reduce((a, b) => a + b, 0) / scores.length
+              setTotalScore(Math.round(avg))
+            }
+          }
         } else {
           setError('套题模式不匹配')
         }
@@ -66,10 +86,9 @@ export default function SetResultPage() {
     if (!setData) return
     setDownloading(true)
     try {
-      // 优先尝试 docx 库，失败则回退到 HTML 方案
-      await downloadSetDoc(setData, userAnswers, refAnswers)
+      await downloadSetDoc(setData, userAnswers, refAnswers, evaluations)
     } catch {
-      downloadSetDocHtml(setData, userAnswers, refAnswers)
+      downloadSetDocHtml(setData, userAnswers, refAnswers, evaluations)
     } finally {
       setDownloading(false)
     }
@@ -78,6 +97,7 @@ export default function SetResultPage() {
   const handleNewSet = () => {
     localStorage.removeItem(`setUserAnswers_${mode}`)
     localStorage.removeItem(`setRefAnswers_${mode}`)
+    localStorage.removeItem(`setEvaluations_${mode}`)
     router.push('/practice')
   }
 
@@ -110,6 +130,19 @@ export default function SetResultPage() {
 
   if (!setData) return null
 
+  // 计算各题得分
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return 'text-green-600'
+    if (score >= 60) return 'text-amber-600'
+    return 'text-red-600'
+  }
+
+  const getScoreBg = (score: number) => {
+    if (score >= 80) return 'bg-green-50 border-green-200'
+    if (score >= 60) return 'bg-amber-50 border-amber-200'
+    return 'bg-red-50 border-red-200'
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
@@ -129,7 +162,7 @@ export default function SetResultPage() {
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* 套题信息 */}
+        {/* 套题信息 + 总分 */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
           <div className="flex items-center justify-between">
             <div>
@@ -138,55 +171,115 @@ export default function SetResultPage() {
                 共 {setData.questions.length} 道题 · 建议作答时间 {setData.time}
               </p>
             </div>
-            <span className="bg-amber-100 text-amber-700 text-xs font-medium px-3 py-1 rounded-full">
-              会员专享
-            </span>
+            <div className="flex items-center gap-4">
+              {totalScore !== null && (
+                <div className="text-center">
+                  <div className={`text-3xl font-bold ${getScoreColor(totalScore)}`}>
+                    {totalScore}
+                  </div>
+                  <div className="text-xs text-slate-500">套题总分</div>
+                </div>
+              )}
+              <span className="bg-amber-100 text-amber-700 text-xs font-medium px-3 py-1 rounded-full">
+                会员专享
+              </span>
+            </div>
           </div>
+          {/* 各题得分预览 */}
+          {totalScore !== null && (
+            <div className="flex gap-2 mt-4 pt-4 border-t border-slate-100">
+              {setData.questions.map((q) => {
+                const eval_ = evaluations[q.index]
+                return (
+                  <div
+                    key={q.index}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium ${eval_ ? getScoreBg(eval_.score) : 'bg-slate-50 border border-slate-200'} ${eval_ ? getScoreColor(eval_.score) : 'text-slate-500'}`}
+                  >
+                    第{q.index}题：{eval_ ? `${eval_.score}分` : '未评分'}
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
         {/* 题目+答案对照 */}
         <div className="space-y-6 mb-8">
-          {setData.questions.map((q) => (
-            <div key={q.index} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="bg-primary-100 text-primary-700 text-xs font-medium px-2.5 py-1 rounded-full">
-                  第{q.index}题
-                </span>
-                <span className="bg-slate-100 text-slate-600 text-xs font-medium px-2.5 py-1 rounded-full">
-                  {q.typeName}
-                </span>
-              </div>
-              <div className="text-slate-800 leading-relaxed whitespace-pre-wrap mb-4">
-                {q.question}
-              </div>
+          {setData.questions.map((q) => {
+            const eval_ = evaluations[q.index]
 
-              {/* 用户答案 */}
-              {userAnswers[q.index] && (
-                <div className="bg-blue-50 rounded-lg border border-blue-200 p-4 mb-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-sm">📝</span>
-                    <span className="font-medium text-blue-800 text-sm">你的答案</span>
-                  </div>
-                  <div className="text-slate-700 leading-relaxed whitespace-pre-wrap text-sm">
-                    {userAnswers[q.index]}
-                  </div>
+            return (
+              <div key={q.index} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="bg-primary-100 text-primary-700 text-xs font-medium px-2.5 py-1 rounded-full">
+                    第{q.index}题
+                  </span>
+                  <span className="bg-slate-100 text-slate-600 text-xs font-medium px-2.5 py-1 rounded-full">
+                    {q.typeName}
+                  </span>
+                  {eval_ && (
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${getScoreBg(eval_.score)} ${getScoreColor(eval_.score)}`}>
+                      {eval_.score}分
+                    </span>
+                  )}
                 </div>
-              )}
+                <div className="text-slate-800 leading-relaxed whitespace-pre-wrap mb-4">
+                  {q.question}
+                </div>
 
-              {/* 参考答案 */}
-              {refAnswers[q.index] && (
-                <div className="bg-green-50 rounded-lg border border-green-200 p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-sm">✅</span>
-                    <span className="font-medium text-green-800 text-sm">参考答案</span>
+                {/* 用户答案 */}
+                {userAnswers[q.index] && (
+                  <div className="bg-blue-50 rounded-lg border border-blue-200 p-4 mb-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm">📝</span>
+                      <span className="font-medium text-blue-800 text-sm">你的答案</span>
+                    </div>
+                    <div className="text-slate-700 leading-relaxed whitespace-pre-wrap text-sm">
+                      {userAnswers[q.index]}
+                    </div>
                   </div>
-                  <div className="text-slate-700 leading-relaxed whitespace-pre-wrap text-sm">
-                    {refAnswers[q.index]}
+                )}
+
+                {/* AI批改结果 */}
+                {eval_ && (
+                  <div className={`rounded-lg border p-4 mb-4 ${getScoreBg(eval_.score)}`}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-sm">🤖</span>
+                      <span className={`font-bold text-sm ${getScoreColor(eval_.score)}`}>AI批改 · {eval_.score}分</span>
+                    </div>
+                    <div className="text-slate-700 leading-relaxed whitespace-pre-wrap text-sm mb-3">
+                      {eval_.evaluation}
+                    </div>
+                    {/* 改进版答案 */}
+                    {eval_.improvedAnswer && (
+                      <div className="mt-3 pt-3 border-t border-slate-200">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-sm">✨</span>
+                          <span className="font-medium text-slate-700 text-sm">改进版答案</span>
+                        </div>
+                        <div className="text-slate-700 leading-relaxed whitespace-pre-wrap text-sm">
+                          {eval_.improvedAnswer}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
-            </div>
-          ))}
+                )}
+
+                {/* 参考答案 */}
+                {refAnswers[q.index] && (
+                  <div className="bg-green-50 rounded-lg border border-green-200 p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-sm">✅</span>
+                      <span className="font-medium text-green-800 text-sm">参考答案</span>
+                    </div>
+                    <div className="text-slate-700 leading-relaxed whitespace-pre-wrap text-sm">
+                      {refAnswers[q.index]}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
 
         {/* 操作按钮 */}

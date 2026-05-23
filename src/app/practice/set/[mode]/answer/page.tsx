@@ -127,9 +127,42 @@ export default function SetAnswerPage() {
         refAnswers[q.index] = data.answer || '生成失败'
       }
 
+      // 逐题调用AI批改
+      const evaluations: Record<number, { score: number; evaluation: string; improvedAnswer: string }> = {}
+      for (const q of setData.questions) {
+        const userAnswer = userAnswers[q.index]
+        if (userAnswer) {
+          try {
+            const evalRes = await fetch('/api/evaluate', {
+              method: 'POST',
+              headers: getAuthHeaders(),
+              body: JSON.stringify({
+                question: q.question,
+                referenceAnswer: refAnswers[q.index],
+                userAnswer: userAnswer,
+                type: q.type,
+              }),
+            })
+            const evalData = await evalRes.json()
+            evaluations[q.index] = {
+              score: evalData.score || 0,
+              evaluation: evalData.evaluation || '批改生成中...',
+              improvedAnswer: evalData.improvedAnswer || '',
+            }
+          } catch {
+            evaluations[q.index] = {
+              score: 0,
+              evaluation: '批改失败',
+              improvedAnswer: '',
+            }
+          }
+        }
+      }
+
       // 保存到 localStorage，跳转到结果页
       localStorage.setItem(`setRefAnswers_${mode}`, JSON.stringify(refAnswers))
       localStorage.setItem(`setUserAnswers_${mode}`, JSON.stringify(userAnswers))
+      localStorage.setItem(`setEvaluations_${mode}`, JSON.stringify(evaluations))
       router.push(`/practice/set/${mode}/result`)
     } catch {
       alert('提交失败，请稍后重试')
