@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { getAuthHeaders } from '@/lib/auth'
 
 interface VoiceInputProps {
   onTranscript: (text: string) => void
@@ -17,11 +18,14 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
   const [isRecording, setIsRecording] = useState(false)
   const [transcript, setTranscript] = useState('')
   const [error, setError] = useState('')
+  const [engine, setEngine] = useState<'aliyun' | 'browser'>('aliyun')
 
   // Refs
   const recognitionRef = useRef<any>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const startTimeRef = useRef<number>(0)
+  const wsRef = useRef<WebSocket | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
 
   // 6分钟超时
   const MAX_DURATION = 6 * 60 * 1000
@@ -38,14 +42,162 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
       } catch (e) {}
       recognitionRef.current = null
     }
+    if (wsRef.current) {
+      try {
+        wsRef.current.close()
+      } catch (e) {}
+      wsRef.current = null
+    }
+    if (mediaRecorderRef.current) {
+      try {
+        mediaRecorderRef.current.stop()
+      } catch (e) {}
+      mediaRecorderRef.current = null
+    }
   }, [])
 
   useEffect(() => {
     return cleanup
   }, [cleanup])
 
-  // 开始录音
-  const startRecording = useCallback(() => {
+  // 开始阿里云录音
+  const startAliyunRecording = useCallback(async () => {
+    try {
+      setError('')
+
+      // 1. 获取Token
+      const tokenRes = await fetch('/api/voice/aliyun-token', {
+        headers: getAuthHeaders(),
+      })
+      const tokenData = await tokenRes.json()
+
+      if (!tokenData.token) {
+        setError('获取语音识别Token失败')
+        return
+      }
+
+      // 2. 获取麦克风权限
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+
+      // 3. 创建MediaRecorder
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+
+      // 4. 连接阿里云WebSocket
+      const wsUrl = `wss://nls-gateway.cn-shanghai.aliyuncs.com/ws/v1?token=${tokenData.token}`
+      const ws = new WebSocket(wsUrl)
+      wsRef.current = ws
+
+      let fullText = ''
+
+      ws.onopen = () => {
+        console.log('阿里云WebSocket连接成功')
+
+        // 发送开始识别指令
+        const startCmd = {
+          header: {
+            message_id: Date.now().toString(),
+            task_id: Date.now().toString(),
+            namespace: 'SpeechRecognizer',
+            name: 'StartRecognition',
+            appkey: tokenData.appKey,
+          },
+          payload: {
+            format: 'opus',
+            sample_rate: 16000,
+            enable_intermediate_result: true,
+            enable_punctuation_prediction: true,
+          },
+        }
+        ws.send(JSON.stringify(startCmd))
+
+        // 开始录音
+        mediaRecorder.start(100) // 每100ms发送一次数据
+        setIsRecording(true)
+        startTimeRef.current = Date.now()
+
+        // 启动定时器
+        timerRef.current = setInterval(() => {
+          const elapsed = Date.now() - startTimeRef.current
+          if (elapsed >= MAX_DURATION) {
+            stopRecording()
+          }
+        }, 1000)
+      }
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data)
+        console.log('阿里云消息:', data)
+
+        if (data.header?.name === 'RecognitionResultChanged') {
+          // 中间结果
+          const text = data.payload?.result || ''
+          setTranscript(text)
+        } else if (data.header?.name === 'RecognitionCompleted') {
+          // 最终结果
+          const text = data.payload?.result || ''
+          fullText += text
+          setTranscript(fullText)
+          onTranscript(fullText)
+        } else if (data.header?.name === 'Error') {
+          setError(`识别错误: ${data.payload?.message || '未知错误'}`)
+          stopRecording()
+        }
+      }
+
+      ws.onerror = (error) => {
+        console.error('阿里云WebSocket错误:', error)
+        setError('语音识别连接错误')
+        stopRecording()
+      }
+
+      ws.onclose = () => {
+        console.log('阿里云WebSocket关闭')
+        stopRecording()
+      }
+
+      // 发送音频数据
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+          event.data.arrayBuffer().then((buffer) => {
+            ws.send(buffer)
+          })
+        }
+      }
+
+    } catch (err: any) {
+      console.error('启动阿里云录音失败:', err)
+      setError(`启动录音失败: ${err.message || '未知错误'}`)
+      cleanup()
+    }
+  }, [onTranscript, cleanup])
+
+  // 停止阿里云录音
+  const stopAliyunRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+    }
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      // 发送停止识别指令
+      const stopCmd = {
+        header: {
+          message_id: Date.now().toString(),
+          task_id: Date.now().toString(),
+          namespace: 'SpeechRecognizer',
+          name: 'StopRecognition',
+        },
+      }
+      wsRef.current.send(JSON.stringify(stopCmd))
+    }
+
+    cleanup()
+    setIsRecording(false)
+    setTranscript('')
+  }, [cleanup])
+
+  // 开始浏览器原生录音
+  const startBrowserRecording = useCallback(() => {
     setError('')
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -65,7 +217,6 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
       setTranscript('')
       startTimeRef.current = Date.now()
 
-      // 启动定时器，6分钟超时
       timerRef.current = setInterval(() => {
         const elapsed = Date.now() - startTimeRef.current
         if (elapsed >= MAX_DURATION) {
@@ -119,8 +270,8 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
     recognition.start()
   }, [onTranscript, cleanup])
 
-  // 停止录音
-  const stopRecording = useCallback(() => {
+  // 停止浏览器原生录音
+  const stopBrowserRecording = useCallback(() => {
     if (recognitionRef.current) {
       recognitionRef.current.stop()
       recognitionRef.current = null
@@ -129,13 +280,36 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
       clearInterval(timerRef.current)
       timerRef.current = null
     }
-    // 如果还有临时文字没发送，发送它
     if (transcript) {
       onTranscript(transcript)
     }
     setIsRecording(false)
     setTranscript('')
   }, [transcript, onTranscript])
+
+  // 开始录音
+  const startRecording = useCallback(() => {
+    if (engine === 'aliyun') {
+      startAliyunRecording()
+    } else {
+      startBrowserRecording()
+    }
+  }, [engine, startAliyunRecording, startBrowserRecording])
+
+  // 停止录音
+  const stopRecording = useCallback(() => {
+    if (engine === 'aliyun') {
+      stopAliyunRecording()
+    } else {
+      stopBrowserRecording()
+    }
+  }, [engine, stopAliyunRecording, stopBrowserRecording])
+
+  // 切换引擎
+  const toggleEngine = useCallback(() => {
+    if (isRecording) return
+    setEngine(prev => prev === 'aliyun' ? 'browser' : 'aliyun')
+  }, [isRecording])
 
   // 渲染
   return (
@@ -157,6 +331,18 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
             </span>
           )}
         </div>
+      )}
+
+      {/* 切换引擎按钮 */}
+      {!disabled && (
+        <button
+          onClick={toggleEngine}
+          disabled={isRecording}
+          className="text-xs px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+          title="切换语音引擎"
+        >
+          {engine === 'aliyun' ? '阿里云' : '浏览器'}
+        </button>
       )}
 
       {/* 主按钮 */}
