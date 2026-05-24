@@ -141,7 +141,7 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data)
-        console.log('阿里云消息:', data)
+        console.log('阿里云消息:', JSON.stringify(data, null, 2))
 
         if (data.header?.name === 'RecognitionStarted') {
           console.log('识别已开始')
@@ -156,9 +156,11 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
           setTranscript(fullText)
           onTranscript(fullText)
         } else if (data.header?.name === 'Error') {
-          console.error('阿里云识别错误:', data)
+          console.error('阿里云识别错误:', JSON.stringify(data, null, 2))
           setError(`识别错误: ${data.payload?.message || data.header?.status_message || '未知错误'}`)
           stopRecording()
+        } else {
+          console.log('阿里云其他消息:', data.header?.name)
         }
       }
 
@@ -168,8 +170,11 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
         stopRecording()
       }
 
-      ws.onclose = () => {
-        console.log('阿里云WebSocket关闭')
+      ws.onclose = (event) => {
+        console.log('阿里云WebSocket关闭:', event.code, event.reason)
+        if (!fullText && !transcript) {
+          setError(`连接已关闭 (${event.code})，请重试`)
+        }
         stopRecording()
       }
 
