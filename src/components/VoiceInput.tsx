@@ -195,13 +195,18 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
         if (data.header?.name === 'RecognitionStarted') {
           console.log('识别已开始')
         } else if (data.header?.name === 'RecognitionResultChanged') {
-          // 中间结果
+          // 中间结果 - 累加
           const text = data.payload?.result || ''
-          setTranscript(text)
+          if (text) {
+            fullText = text
+            setTranscript(fullText)
+          }
         } else if (data.header?.name === 'RecognitionCompleted') {
           // 最终结果
           const text = data.payload?.result || ''
-          fullText += text
+          if (text) {
+            fullText = text
+          }
           setTranscript(fullText)
           onTranscript(fullText)
         } else if (data.header?.name === 'Error') {
@@ -237,12 +242,28 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
 
   // 停止阿里云录音
   const stopAliyunRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop()
+    // 先断开音频处理，停止发送数据
+    if (processorRef.current) {
+      try {
+        processorRef.current.disconnect()
+      } catch (e) {}
+      processorRef.current = null
+    }
+    if (sourceRef.current) {
+      try {
+        sourceRef.current.disconnect()
+      } catch (e) {}
+      sourceRef.current = null
+    }
+    if (audioContextRef.current) {
+      try {
+        audioContextRef.current.close()
+      } catch (e) {}
+      audioContextRef.current = null
     }
 
+    // 发送停止识别指令，等待最终结果
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      // 发送停止识别指令
       const stopCmd = {
         header: {
           message_id: Date.now().toString(),
@@ -252,12 +273,21 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
         },
       }
       wsRef.current.send(JSON.stringify(stopCmd))
+      
+      // 延迟关闭WebSocket，等待RecognitionCompleted消息
+      setTimeout(() => {
+        if (wsRef.current) {
+          wsRef.current.close()
+          wsRef.current = null
+        }
+        setIsRecording(false)
+        setElapsedTime(0)
+      }, 2000)
+    } else {
+      cleanup()
+      setIsRecording(false)
+      setElapsedTime(0)
     }
-
-    cleanup()
-    setIsRecording(false)
-    setTranscript('')
-    setElapsedTime(0)
   }, [cleanup])
 
   // 开始浏览器原生录音
