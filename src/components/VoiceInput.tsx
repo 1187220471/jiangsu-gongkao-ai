@@ -196,11 +196,12 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
         if (data.header?.name === 'RecognitionStarted') {
           console.log('识别已开始')
         } else if (data.header?.name === 'RecognitionResultChanged') {
-          // 中间结果 - 累加
+          // 中间结果 - 实时流式输出到父组件文本框
           const text = data.payload?.result || ''
           if (text) {
             fullTextRef.current = text
             setTranscript(text)
+            onTranscript(text)
           }
         } else if (data.header?.name === 'RecognitionCompleted') {
           // 最终结果
@@ -415,7 +416,8 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
 
   // 渲染
   return (
-    <div className="inline-flex items-center gap-2">
+    <div className="flex flex-col gap-2">
+      <div className="inline-flex items-center gap-2">
       {isRecording && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
           {/* 录音指示器 */}
@@ -479,6 +481,14 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
           {error}
         </div>
       )}
+
+      {/* 实时语音转写结果 */}
+      {isRecording && transcript && (
+        <div className="px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-sm text-slate-700 max-h-20 overflow-y-auto">
+          {transcript}
+        </div>
+      )}
+    </div>
     </div>
   )
 }
