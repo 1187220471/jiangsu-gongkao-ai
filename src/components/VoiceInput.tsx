@@ -5,31 +5,30 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 interface VoiceInputProps {
   onTranscript: (text: string) => void
   disabled?: boolean
+  mode?: 'xfyun' | 'browser'
 }
 
-// 检查浏览器是否支持语音识别
-const isSpeechRecognitionSupported = () => {
-  return typeof window !== 'undefined' && (
-    'SpeechRecognition' in window ||
-    'webkitSpeechRecognition' in window
-  )
+// 检测浏览器是否支持Web Speech API
+const isBrowserSpeechSupported = () => {
+  return typeof window !== 'undefined' && 
+    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
 }
 
-export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) {
+export default function VoiceInput({ onTranscript, disabled, mode = 'browser' }: VoiceInputProps) {
   const [isRecording, setIsRecording] = useState(false)
   const [transcript, setTranscript] = useState('')
-  const [interimTranscript, setInterimTranscript] = useState('')
-  const [recordingTime, setRecordingTime] = useState(0)
   const [error, setError] = useState('')
-  const [showUnsupported, setShowUnsupported] = useState(false)
-  const [isUploading, setIsUploading] = useState(false)
-  const [useXfyun, setUseXfyun] = useState(true) // 默认使用讯飞
+  const [engine, setEngine] = useState<'xfyun' | 'browser'>(mode)
+  const [showTips, setShowTips] = useState(false)
 
+  // Refs
   const recognitionRef = useRef<any>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const audioChunksRef = useRef<Blob[]>([])
-  const maxDuration = 360 // 6分钟 = 360秒
+  const startTimeRef = useRef<number>(0)
+  const xfyunRecognizerRef = useRef<any>(null)
+
+  // 6分钟超时
+  const MAX_DURATION = 6 * 60 * 1000
 
   // 清理函数
   const cleanup = useCallback(() => {
@@ -40,359 +39,292 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop()
-      } catch {
-        // 忽略停止时的错误
-      }
+      } catch (e) {}
       recognitionRef.current = null
     }
-    if (mediaRecorderRef.current) {
+    if (xfyunRecognizerRef.current) {
       try {
-        mediaRecorderRef.current.stop()
-      } catch {
-        // 忽略
-      }
-      mediaRecorderRef.current = null
+        xfyunRecognizerRef.current.destroy()
+      } catch (e) {}
+      xfyunRecognizerRef.current = null
     }
-    setIsRecording(false)
-    setRecordingTime(0)
-    setIsUploading(false)
   }, [])
 
   useEffect(() => {
-    return () => {
-      cleanup()
-    }
+    return cleanup
   }, [cleanup])
 
-  // 格式化时间显示
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  }
+  // 开始浏览器原生录音
+  const startBrowserRecognition = useCallback(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      setError('您的浏览器不支持语音功能，请更换Chrome或Edge浏览器')
+      return false
+    }
 
-  // 使用讯飞语音识别（服务端代理）
-  const startXfyunRecording = async () => {
-    setError('')
-    setTranscript('')
-    setInterimTranscript('')
-    setRecordingTime(0)
-    audioChunksRef.current = []
+    const recognition = new SpeechRecognition()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = 'zh-CN'
 
-    try {
-      // 请求麦克风权限
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-
-      // 创建MediaRecorder，尝试使用支持的格式
-      let mimeType = 'audio/webm'
-      if (MediaRecorder.isTypeSupported('audio/mp4')) {
-        mimeType = 'audio/mp4'
-      } else if (MediaRecorder.isTypeSupported('audio/mp3')) {
-        mimeType = 'audio/mp3'
-      } else if (MediaRecorder.isTypeSupported('audio/wav')) {
-        mimeType = 'audio/wav'
-      }
-      
-      const mediaRecorder = new MediaRecorder(stream, { mimeType })
-      mediaRecorderRef.current = mediaRecorder
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data)
-        }
-      }
-
-      mediaRecorder.onstop = async () => {
-        // 停止所有轨道
-        stream.getTracks().forEach(track => track.stop())
-
-        // 合并音频数据
-        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' })
-
-        if (audioBlob.size === 0) {
-          setError('录音数据为空')
-          cleanup()
-          return
-        }
-
-        setIsUploading(true)
-
-        try {
-          // 转换为base64
-          const reader = new FileReader()
-          reader.readAsDataURL(audioBlob)
-          reader.onloadend = async () => {
-            const base64 = reader.result as string
-            // 去掉data:audio/webm;base64,前缀
-            const base64Data = base64.split(',')[1]
-
-            // 上传到服务端
-            const token = localStorage.getItem('token')
-            const response = await fetch('/api/voice/xfyun', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-              },
-              body: JSON.stringify({ audio: base64Data }),
-            })
-
-            const result = await response.json()
-
-            if (result.error) {
-              setError(result.error)
-            } else {
-              onTranscript(result.text || '')
-            }
-
-            setIsUploading(false)
-            cleanup()
-          }
-        } catch (err) {
-          setError('上传音频失败')
-          setIsUploading(false)
-          cleanup()
-        }
-      }
-
-      mediaRecorder.start(1000) // 每秒收集一次数据
+    recognition.onstart = () => {
       setIsRecording(true)
+      setError('')
+      setTranscript('')
+      startTimeRef.current = Date.now()
 
-      // 开始计时
+      // 启动定时器，6分钟超时
       timerRef.current = setInterval(() => {
-        setRecordingTime((prev) => {
-          if (prev >= maxDuration - 1) {
-            // 到达6分钟上限，自动停止
-            stopRecording()
-            return prev
-          }
-          return prev + 1
-        })
+        const elapsed = Date.now() - startTimeRef.current
+        if (elapsed >= MAX_DURATION) {
+          stopRecording()
+        }
       }, 1000)
+    }
 
-    } catch (err) {
-      setError('无法访问麦克风，请检查权限设置')
+    recognition.onresult = (event: any) => {
+      let finalTranscript = ''
+      let interimTranscript = ''
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript
+        } else {
+          interimTranscript += transcript
+        }
+      }
+
+      const displayText = finalTranscript || interimTranscript
+      setTranscript(displayText)
+
+      if (finalTranscript) {
+        onTranscript(finalTranscript)
+        setTranscript('')
+      }
+    }
+
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error)
+      if (event.error === 'no-speech') {
+        // 无语音输入，可以继续
+        return
+      }
+      if (event.error === 'not-allowed') {
+        setError('麦克风权限被拒绝，请在浏览器设置中允许使用麦克风')
+      } else {
+        setError(`语音识别错误: ${event.error}`)
+      }
       setIsRecording(false)
-    }
-  }
-
-  // 使用浏览器原生语音识别
-  const startBrowserRecording = () => {
-    if (!isSpeechRecognitionSupported()) {
-      setShowUnsupported(true)
-      return
+      cleanup()
     }
 
-    setError('')
+    recognition.onend = () => {
+      setIsRecording(false)
+      cleanup()
+    }
+
+    recognitionRef.current = recognition
+    recognition.start()
+    return true
+  }, [onTranscript, cleanup])
+
+  // 停止浏览器原生录音
+  const stopBrowserRecognition = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+      recognitionRef.current = null
+    }
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+    // 如果还有临时文字没发送，发送它
+    if (transcript) {
+      onTranscript(transcript)
+    }
+    setIsRecording(false)
     setTranscript('')
-    setInterimTranscript('')
-    setRecordingTime(0)
+  }, [transcript, onTranscript])
 
+  // 开始讯飞录音
+  const startXfyunRecognition = useCallback(async () => {
     try {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      const recognition = new SpeechRecognition()
-      recognition.lang = 'zh-CN'
-      recognition.continuous = true
-      recognition.interimResults = true
-      recognition.maxAlternatives = 1
+      // 动态导入SDK
+      const { XfyunASR } = await import('xfyun-sdk')
 
-      recognition.onstart = () => {
-        setIsRecording(true)
-        // 开始计时
-        timerRef.current = setInterval(() => {
-          setRecordingTime((prev) => {
-            if (prev >= maxDuration - 1) {
-              // 到达6分钟上限，自动停止
+      const recognizer = new XfyunASR({
+        appId: '57c0ec9c',
+        apiKey: 'b7ed51fb8d8a0bbb7277278f6e120bfb',
+        apiSecret: 'NjQxZjgzNzdlNWZkNjM3NWQ3ZTA0MzI1',
+        language: 'zh_cn',
+        domain: 'iat',
+        accent: 'mandarin',
+        vadEos: 5000, // 5秒静音停止
+        enableReconnect: false,
+        maxAudioSize: 30 * 1024 * 1024, // 30MB
+      }, {
+        onStart: () => {
+          setIsRecording(true)
+          setError('')
+          setTranscript('')
+          startTimeRef.current = Date.now()
+
+          // 启动定时器，6分钟超时
+          timerRef.current = setInterval(() => {
+            const elapsed = Date.now() - startTimeRef.current
+            if (elapsed >= MAX_DURATION) {
               stopRecording()
-              return prev
             }
-            return prev + 1
-          })
-        }, 1000)
-      }
-
-      recognition.onresult = (event: any) => {
-        let finalText = ''
-        let interimText = ''
-
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i]
-          if (result.isFinal) {
-            finalText += result[0].transcript
-          } else {
-            interimText += result[0].transcript
+          }, 1000)
+        },
+        onRecognitionResult: (text: string, isEnd: boolean) => {
+          console.log('讯飞识别结果:', text, isEnd)
+          setTranscript(text)
+          if (isEnd) {
+            onTranscript(text)
+            setTranscript('')
           }
-        }
-
-        if (finalText) {
-          setTranscript((prev) => prev + finalText)
-        }
-        setInterimTranscript(interimText)
-      }
-
-      recognition.onerror = (event: any) => {
-        if (event.error === 'no-speech') {
-          // 没有检测到语音，不显示错误
-          return
-        }
-        if (event.error === 'aborted') {
-          // 用户中止，不显示错误
-          return
-        }
-        setError(`识别错误: ${event.error}`)
-        cleanup()
-      }
-
-      recognition.onend = () => {
-        // 如果还在录音状态（不是手动停止），可能是被系统中断
-        if (isRecording) {
+        },
+        onProcess: (volume: number) => {
+          // 音量回调，可用于显示音量指示
+        },
+        onError: (err: any) => {
+          console.error('讯飞识别错误:', err)
+          setError(`讯飞识别错误: ${err.message || err.desc || '未知错误'}`)
+          setIsRecording(false)
           cleanup()
+        },
+        onStateChange: (state: string) => {
+          console.log('讯飞状态:', state)
         }
-      }
+      })
 
-      recognitionRef.current = recognition
-      recognition.start()
-    } catch (err) {
-      setError('启动录音失败，请检查麦克风权限')
-      setIsRecording(false)
+      xfyunRecognizerRef.current = recognizer
+
+      await recognizer.start()
+
+    } catch (err: any) {
+      console.error('启动讯飞识别失败:', err)
+      setError(`启动讯飞识别失败: ${err.message || '未知错误'}`)
+      cleanup()
     }
-  }
+  }, [onTranscript, cleanup])
 
-  const startRecording = () => {
-    if (useXfyun) {
-      startXfyunRecording()
-    } else {
-      startBrowserRecording()
-    }
-  }
-
-  const stopRecording = () => {
-    if (useXfyun && mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop()
-    } else if (recognitionRef.current) {
+  // 停止讯飞录音
+  const stopXfyunRecognition = useCallback(async () => {
+    if (xfyunRecognizerRef.current) {
       try {
-        recognitionRef.current.stop()
-      } catch {
-        // 忽略停止时的错误
+        await xfyunRecognizerRef.current.stop()
+        // 如果还有临时文字没发送，发送它
+        if (transcript) {
+          onTranscript(transcript)
+        }
+      } catch (err) {
+        console.error('停止讯飞识别失败:', err)
       }
-
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
-      }
-
-      // 合并最终结果
-      const finalText = transcript + interimTranscript
-      if (finalText.trim()) {
-        onTranscript(finalText.trim())
-      }
-
-      setIsRecording(false)
-      setInterimTranscript('')
-      setRecordingTime(0)
+      xfyunRecognizerRef.current = null
     }
-  }
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+    setIsRecording(false)
+    setTranscript('')
+  }, [transcript, onTranscript])
 
-  // 不支持浏览器的提示
-  if (showUnsupported) {
-    return (
-      <div className="inline-flex items-center gap-2">
-        <button
-          onClick={() => setShowUnsupported(false)}
-          className="text-xs text-slate-400 hover:text-slate-600 underline"
-        >
-          关闭提示
-        </button>
-        <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
-          您的浏览器不支持语音功能，请更换 Chrome 或 Edge 浏览器
-        </span>
-      </div>
-    )
-  }
+  // 开始录音
+  const startRecording = useCallback(async () => {
+    setError('')
 
+    if (engine === 'xfyun') {
+      await startXfyunRecognition()
+    } else {
+      startBrowserRecognition()
+    }
+  }, [engine, startBrowserRecognition, startXfyunRecognition])
+
+  // 停止录音
+  const stopRecording = useCallback(async () => {
+    if (engine === 'xfyun') {
+      await stopXfyunRecognition()
+    } else {
+      stopBrowserRecognition()
+    }
+  }, [engine, stopBrowserRecognition, stopXfyunRecognition])
+
+  // 切换引擎
+  const toggleEngine = useCallback(() => {
+    if (isRecording) return
+    const newEngine = engine === 'browser' ? 'xfyun' : 'browser'
+    setEngine(newEngine)
+    setShowTips(newEngine === 'xfyun')
+  }, [engine, isRecording])
+
+  // 渲染
   return (
-    <div className="inline-flex flex-col gap-2">
-      {/* 录音中状态 */}
+    <div className="inline-flex items-center gap-2">
       {isRecording && (
-        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-2">
-          {/* 录音动画 */}
-          <div className="flex items-center gap-1">
-            <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-            </span>
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
+          {/* 录音指示器 */}
+          <div className="flex gap-0.5 items-end h-4">
+            <div className="w-0.5 h-2 bg-red-500 rounded animate-pulse" style={{ animationDuration: '0.5s' }}></div>
+            <div className="w-0.5 h-3 bg-red-500 rounded animate-pulse" style={{ animationDuration: '0.7s' }}></div>
+            <div className="w-0.5 h-1.5 bg-red-500 rounded animate-pulse" style={{ animationDuration: '0.3s' }}></div>
+            <div className="w-0.5 h-2.5 bg-red-500 rounded animate-pulse" style={{ animationDuration: '0.6s' }}></div>
           </div>
-
+          <span className="text-xs text-red-600 font-medium">录音中</span>
           {/* 计时器 */}
-          <span className="text-sm font-mono font-medium text-red-700">
-            {formatTime(recordingTime)} / 06:00
-          </span>
-
-          {/* 实时文字预览（仅浏览器API模式） */}
-          {!useXfyun && (
-            <span className="text-sm text-slate-600 truncate max-w-[200px]">
-              {interimTranscript || transcript || '正在聆听...'}
+          {startTimeRef.current > 0 && (
+            <span className="text-xs text-red-500">
+              {Math.floor((Date.now() - startTimeRef.current) / 1000)}s
             </span>
           )}
-
-          {/* 上传中提示（讯飞模式） */}
-          {useXfyun && isUploading && (
-            <span className="text-sm text-slate-600">
-              正在识别...
-            </span>
-          )}
-
-          {/* 结束按钮 */}
-          <button
-            onClick={stopRecording}
-            disabled={isUploading}
-            className="ml-auto bg-red-600 hover:bg-red-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-          >
-            {isUploading ? '识别中...' : '结束录音'}
-          </button>
         </div>
+      )}
+
+      {/* 切换引擎按钮 */}
+      {!disabled && (
+        <button
+          onClick={toggleEngine}
+          disabled={isRecording}
+          className="text-xs px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+          title="切换语音引擎"
+        >
+          {engine === 'xfyun' ? '讯飞' : '浏览器'}
+        </button>
+      )}
+
+      {/* 主按钮 */}
+      {!disabled && (
+        <button
+          onClick={isRecording ? stopRecording : startRecording}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            isRecording
+              ? 'bg-red-100 text-red-700 border border-red-200 hover:bg-red-150'
+              : 'bg-primary-50 text-primary-700 border border-primary-200 hover:bg-primary-100'
+          }`}
+        >
+          {isRecording ? (
+            <>
+              <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+              结束录音
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+              </svg>
+              语音答题
+            </>
+          )}
+        </button>
       )}
 
       {/* 错误提示 */}
       {error && (
-        <span className="text-xs text-red-600">{error}</span>
-      )}
-
-      {/* 开始录音按钮 */}
-      {!isRecording && (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={startRecording}
-            disabled={disabled}
-            className="inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title="语音答题"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" x2="12" y1="19" y2="22" />
-            </svg>
-            语音答题
-          </button>
-
-          {/* 切换引擎 */}
-          <button
-            onClick={() => setUseXfyun(!useXfyun)}
-            className="text-xs text-slate-400 hover:text-slate-600 underline"
-            title={useXfyun ? '当前使用讯飞识别（更准确）' : '当前使用浏览器识别（免费）'}
-          >
-            {useXfyun ? '讯飞' : '浏览器'}
-          </button>
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-red-100 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm shadow-lg z-50">
+          {error}
         </div>
       )}
     </div>

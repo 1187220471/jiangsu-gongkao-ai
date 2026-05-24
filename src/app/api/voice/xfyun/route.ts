@@ -3,9 +3,8 @@ import { requireAuth } from '@/lib/auth'
 import { createHash, createHmac } from 'crypto'
 
 /**
- * 讯飞语音识别API代理
- * 使用录音文件转写API
- * 文档：https://www.xfyun.cn/doc/asr/lfasr/API.html
+ * 讯飞语音识别 - 语音听写一句话识别API
+ * 文档：https://www.xfyun.cn/doc/asr/voicedictation/API.html
  */
 
 // MD5哈希
@@ -18,10 +17,11 @@ function hmacSha1(key: string, data: string): string {
   return createHmac('sha1', key).update(data).digest('base64')
 }
 
-// 生成签名
-function generateSigna(appId: string, apiSecret: string, timestamp: string): string {
+// 生成讯飞语音听写API签名
+// 算法: md5(appid + ts) -> hmac-sha1(结果, apiKey)
+function generateSigna(appId: string, apiKey: string, timestamp: string): string {
   const baseString = md5(appId + timestamp)
-  return hmacSha1(apiSecret, baseString)
+  return hmacSha1(apiKey, baseString)
 }
 
 export async function POST(request: Request) {
@@ -41,193 +41,87 @@ export async function POST(request: Request) {
       )
     }
 
-    // 讯飞配置
+    // 讯飞配置 - 语音听写API
     const appId = '57c0ec9c'
-    const apiKey = 'b7ed51fb8d8a0bbb7277278f6e120bfb'  // 用于签名
-    const apiSecret = 'NjQxZjgzNzdlNWZkNjM3NWQ3ZTA0MzI1'  // 备用
+    const apiKey = 'b7ed51fb8d8a0bbb7277278f6e120bfb'
 
-    // 将base64转为二进制，计算实际文件大小
+    // 将base64转为二进制
     const audioBuffer = Buffer.from(audio, 'base64')
-    const fileLen = audioBuffer.length
+    const audioBase64 = audio.toString()
 
-    console.log('音频信息:', { fileLen, base64Len: audio.length })
+    console.log('讯飞语音听写请求:', {
+      appId,
+      audioLen: audioBuffer.length,
+      base64Len: audioBase64.length
+    })
 
-    // 1. 预处理 - 获取task_id
+    // 生成签名
     const timestamp = Math.floor(Date.now() / 1000).toString()
     const signa = generateSigna(appId, apiKey, timestamp)
 
-    console.log('讯飞预处理请求:', { app_id: appId, ts: timestamp, file_len: fileLen })
+    console.log('签名:', signa)
 
-    const prepareResponse = await fetch('https://raasr.xfyun.cn/api/prepare', {
+    // 调用讯飞语音听写一句话识别API
+    // 注意：这里是调用讯飞"语音听写"服务，不是"录音文件转写"
+    const response = await fetch('https://api.xf-yun.com/v1/private/SEortSgSjfeClDlD/recognation', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'Content-Type': 'application/json',
       },
-      body: new URLSearchParams({
-        app_id: appId,
+      body: JSON.stringify({
+        request: {
+          common: {
+            app_id: appId,
+          },
+          business: {
+            aue: 'lame',  // 音频编码，lame=mp3, raw=pcm, speex=spx
+            auf: 'audio/L16;rate=16000',  // 音频格式
+            scene: 'main',  // 场景
+            vad_eos: 5000,  // 静音超时时间(ms)
+          },
+          data: {
+            status: 2,  // 2=最后一块音频
+            format: 'audio/L16;rate=16000',
+            encoding: 'raw',
+            audio: audioBase64,
+          },
+        },
         signa: signa,
         ts: timestamp,
-        file_len: fileLen.toString(),
-        file_name: 'voice.wav',
-        slice_num: '1',
-        language: 'cn',
+        appid: appId,
       }),
     })
 
-    const prepareResult = await prepareResponse.json()
-    console.log('讯飞预处理结果:', prepareResult)
+    const result = await response.json()
+    console.log('讯飞响应:', JSON.stringify(result))
 
-    if (prepareResult.ok !== 0) {
-      const errorMsg = prepareResult.failed || `预处理失败(err_no:${prepareResult.err_no})`
-      console.error('预处理失败:', errorMsg)
+    // 解析结果
+    if (result.code !== 0 && result.code !== '0') {
       return NextResponse.json(
-        { error: errorMsg },
+        { error: `语音识别失败: ${result.desc || result.message || result.code}` },
         { status: 500 }
       )
     }
 
-    const taskId = prepareResult.data
-    if (!taskId) {
-      return NextResponse.json(
-        { error: '未获取到任务ID' },
-        { status: 500 }
-      )
-    }
-
-    console.log('获取到taskId:', taskId)
-
-    // 2. 上传文件（multipart/form-data）
-    const uploadTimestamp = Math.floor(Date.now() / 1000).toString()
-    const uploadSigna = generateSigna(appId, apiKey, uploadTimestamp)
-
-    const formData = new FormData()
-    formData.append('app_id', appId)
-    formData.append('signa', uploadSigna)
-    formData.append('ts', uploadTimestamp)
-    formData.append('task_id', taskId)
-    formData.append('slice_id', 'aaaaaaaaaa')
-    formData.append('content', new Blob([audioBuffer]))
-
-    const uploadResponse = await fetch('https://raasr.xfyun.cn/api/upload', {
-      method: 'POST',
-      body: formData,
-    })
-
-    const uploadResult = await uploadResponse.json()
-    console.log('讯飞上传结果:', uploadResult)
-
-    if (uploadResult.ok !== 0) {
-      const errorMsg = uploadResult.failed || `上传失败(err_no:${uploadResult.err_no})`
-      console.error('上传失败:', errorMsg)
-      return NextResponse.json(
-        { error: errorMsg },
-        { status: 500 }
-      )
-    }
-
-    // 3. 合并文件
-    const mergeTimestamp = Math.floor(Date.now() / 1000).toString()
-    const mergeSigna = generateSigna(appId, apiKey, mergeTimestamp)
-
-    const mergeResponse = await fetch('https://raasr.xfyun.cn/api/merge', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-      },
-      body: new URLSearchParams({
-        app_id: appId,
-        signa: mergeSigna,
-        ts: mergeTimestamp,
-        task_id: taskId,
-      }),
-    })
-
-    const mergeResult = await mergeResponse.json()
-    console.log('讯飞合并结果:', mergeResult)
-
-    if (mergeResult.ok !== 0) {
-      const errorMsg = mergeResult.failed || `合并失败(err_no:${mergeResult.err_no})`
-      console.error('合并失败:', errorMsg)
-      return NextResponse.json(
-        { error: errorMsg },
-        { status: 500 }
-      )
-    }
-
-    // 4. 轮询获取结果
+    // 提取识别文字
     let text = ''
-    let attempts = 0
-    const maxAttempts = 30 // 最多轮询30次，每次2秒，共60秒
-
-    while (attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      attempts++
-
-      const queryTimestamp = Math.floor(Date.now() / 1000).toString()
-      const querySigna = generateSigna(appId, apiKey, queryTimestamp)
-
-      // 查询进度
-      const progressResponse = await fetch('https://raasr.xfyun.cn/api/getProgress', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        },
-        body: new URLSearchParams({
-          app_id: appId,
-          signa: querySigna,
-          ts: queryTimestamp,
-          task_id: taskId,
-        }),
-      })
-
-      const progressResult = await progressResponse.json()
-      console.log(`讯飞进度查询(${attempts}):`, progressResult)
-
-      if (progressResult.ok !== 0) {
-        continue
-      }
-
-      const progressData = JSON.parse(progressResult.data || '{}')
+    if (result.data && result.data.result) {
+      const resultData = typeof result.data === 'string' 
+        ? JSON.parse(result.data) 
+        : result.data.result
       
-      // 状态码：9表示转写结果上传完成
-      if (progressData.status === 9) {
-        // 获取结果
-        const resultTimestamp = Math.floor(Date.now() / 1000).toString()
-        const resultSigna = generateSigna(appId, apiKey, resultTimestamp)
-
-        const resultResponse = await fetch('https://raasr.xfyun.cn/api/getResult', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-          },
-          body: new URLSearchParams({
-            app_id: appId,
-            signa: resultSigna,
-            ts: resultTimestamp,
-            task_id: taskId,
-          }),
-        })
-
-        const resultData = await resultResponse.json()
-        console.log('讯飞最终结果:', resultData)
-
-        if (resultData.ok === 0 && resultData.data) {
-          const results = JSON.parse(resultData.data)
-          if (Array.isArray(results)) {
-            text = results.map((item: any) => item.onebest || '').join('')
+      if (resultData && resultData.ws) {
+        for (const w of resultData.ws) {
+          if (w.cw) {
+            for (const c of w.cw) {
+              text += c.w || ''
+            }
           }
         }
-        break
-      }
-
-      // 状态码：-1表示失败
-      if (progressData.status === -1) {
-        return NextResponse.json(
-          { error: progressData.desc || '转写失败' },
-          { status: 500 }
-        )
       }
     }
+
+    console.log('识别结果:', text)
 
     return NextResponse.json({
       text: text || '识别结果为空',
