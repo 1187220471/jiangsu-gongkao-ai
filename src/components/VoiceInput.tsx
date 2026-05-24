@@ -30,6 +30,7 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
   const audioContextRef = useRef<AudioContext | null>(null)
   const processorRef = useRef<ScriptProcessorNode | null>(null)
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const fullTextRef = useRef<string>('')
 
   // 6分钟超时
   const MAX_DURATION = 6 * 60 * 1000
@@ -118,7 +119,7 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
-      let fullText = ''
+      fullTextRef.current = ''
 
       ws.onopen = () => {
         console.log('阿里云WebSocket连接成功')
@@ -198,17 +199,18 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
           // 中间结果 - 累加
           const text = data.payload?.result || ''
           if (text) {
-            fullText = text
-            setTranscript(fullText)
+            fullTextRef.current = text
+            setTranscript(text)
           }
         } else if (data.header?.name === 'RecognitionCompleted') {
           // 最终结果
           const text = data.payload?.result || ''
           if (text) {
-            fullText = text
+            fullTextRef.current = text
           }
-          setTranscript(fullText)
-          onTranscript(fullText)
+          console.log('识别完成，最终文本:', fullTextRef.current)
+          setTranscript(fullTextRef.current)
+          onTranscript(fullTextRef.current)
         } else if (data.header?.name === 'Error') {
           console.error('阿里云识别错误:', JSON.stringify(data, null, 2))
           setError(`识别错误: ${data.payload?.message || data.header?.status_message || '未知错误'}`)
@@ -226,7 +228,7 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
 
       ws.onclose = (event) => {
         console.log('阿里云WebSocket关闭:', event.code, event.reason)
-        if (!fullText && !transcript) {
+        if (!fullTextRef.current && !transcript) {
           setError(`连接已关闭 (${event.code})，请重试`)
         }
         stopRecording()
@@ -280,8 +282,14 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
           wsRef.current.close()
           wsRef.current = null
         }
+        // 确保最终结果已传递
+        if (fullTextRef.current) {
+          console.log('停止录音，传递最终文本:', fullTextRef.current)
+          onTranscript(fullTextRef.current)
+        }
         setIsRecording(false)
         setElapsedTime(0)
+        fullTextRef.current = ''
       }, 2000)
     } else {
       cleanup()
