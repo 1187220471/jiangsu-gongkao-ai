@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
+import { createHash, createHmac } from 'crypto'
 
 /**
  * 讯飞语音识别API代理
@@ -7,33 +8,19 @@ import { requireAuth } from '@/lib/auth'
  * 文档：https://www.xfyun.cn/doc/asr/lfasr/API.html
  */
 
-// HmacSHA1签名
-async function hmacSha1(key: string, data: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(key),
-    { name: 'HMAC', hash: 'SHA-1' },
-    false,
-    ['sign']
-  )
-  const signature = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(data))
-  const signatureArray = Array.from(new Uint8Array(signature))
-  return btoa(String.fromCharCode(...signatureArray))
+// MD5哈希
+function md5(message: string): string {
+  return createHash('md5').update(message).digest('hex')
 }
 
-// MD5哈希
-async function md5(message: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(message)
-  const hashBuffer = await crypto.subtle.digest('MD5', data)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+// HmacSHA1签名
+function hmacSha1(key: string, data: string): string {
+  return createHmac('sha1', key).update(data).digest('base64')
 }
 
 // 生成签名
-async function generateSigna(appId: string, apiSecret: string, timestamp: string): Promise<string> {
-  const baseString = await md5(appId + timestamp)
+function generateSigna(appId: string, apiSecret: string, timestamp: string): string {
+  const baseString = md5(appId + timestamp)
   return hmacSha1(apiSecret, baseString)
 }
 
@@ -66,7 +53,7 @@ export async function POST(request: Request) {
 
     // 1. 预处理 - 获取task_id
     const timestamp = Math.floor(Date.now() / 1000).toString()
-    const signa = await generateSigna(appId, apiSecret, timestamp)
+    const signa = generateSigna(appId, apiSecret, timestamp)
 
     console.log('讯飞预处理请求:', { app_id: appId, ts: timestamp, file_len: fileLen })
 
@@ -110,7 +97,7 @@ export async function POST(request: Request) {
 
     // 2. 上传文件（multipart/form-data）
     const uploadTimestamp = Math.floor(Date.now() / 1000).toString()
-    const uploadSigna = await generateSigna(appId, apiSecret, uploadTimestamp)
+    const uploadSigna = generateSigna(appId, apiSecret, uploadTimestamp)
 
     const formData = new FormData()
     formData.append('app_id', appId)
@@ -139,7 +126,7 @@ export async function POST(request: Request) {
 
     // 3. 合并文件
     const mergeTimestamp = Math.floor(Date.now() / 1000).toString()
-    const mergeSigna = await generateSigna(appId, apiSecret, mergeTimestamp)
+    const mergeSigna = generateSigna(appId, apiSecret, mergeTimestamp)
 
     const mergeResponse = await fetch('https://raasr.xfyun.cn/api/merge', {
       method: 'POST',
@@ -176,7 +163,7 @@ export async function POST(request: Request) {
       attempts++
 
       const queryTimestamp = Math.floor(Date.now() / 1000).toString()
-      const querySigna = await generateSigna(appId, apiSecret, queryTimestamp)
+      const querySigna = generateSigna(appId, apiSecret, queryTimestamp)
 
       // 查询进度
       const progressResponse = await fetch('https://raasr.xfyun.cn/api/getProgress', {
@@ -205,7 +192,7 @@ export async function POST(request: Request) {
       if (progressData.status === 9) {
         // 获取结果
         const resultTimestamp = Math.floor(Date.now() / 1000).toString()
-        const resultSigna = await generateSigna(appId, apiSecret, resultTimestamp)
+        const resultSigna = generateSigna(appId, apiSecret, resultTimestamp)
 
         const resultResponse = await fetch('https://raasr.xfyun.cn/api/getResult', {
           method: 'POST',
