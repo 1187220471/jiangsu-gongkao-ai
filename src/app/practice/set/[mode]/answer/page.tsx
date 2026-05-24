@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { getAuthHeaders } from '@/lib/auth'
+import VoiceInput from '@/components/VoiceInput'
 
 interface QuestionItem {
   index: number
@@ -305,14 +306,20 @@ export default function SetAnswerPage() {
 
           {/* 答题区 */}
           <div>
-            <label className="block font-medium text-slate-700 mb-2">
-              你的答案
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block font-medium text-slate-700">
+                你的答案
+              </label>
+              <VoiceInput
+                onTranscript={(text) => setCurrentAnswer((prev) => prev + text)}
+                disabled={submitting}
+              />
+            </div>
             <textarea
               value={currentAnswer}
               onChange={(e) => setCurrentAnswer(e.target.value)}
               className="w-full h-64 px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none text-slate-700 leading-relaxed"
-              placeholder="请在此输入你的面试答案..."
+              placeholder="请在此输入你的面试答案，或点击右上角语音答题..."
             />
             <div className="text-right text-sm text-slate-400 mt-2">
               {currentAnswer.length} 字

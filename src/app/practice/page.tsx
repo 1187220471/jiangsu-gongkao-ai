@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getAuthHeaders } from '@/lib/auth'
 import { QUESTION_TYPE_LABELS } from '@/types'
+import VoiceInput from '@/components/VoiceInput'
 
 const questionTypes = [
   { key: 'social', label: '社会现象类' },
@@ -299,12 +300,18 @@ export default function Practice() {
             {/* User Answer Input */}
             {step === 'answer' && (
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
-                <h3 className="font-bold text-slate-800 mb-3">你的答案</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-slate-800">你的答案</h3>
+                  <VoiceInput
+                    onTranscript={(text) => setUserAnswer((prev) => prev + text)}
+                    disabled={loading}
+                  />
+                </div>
                 <textarea
                   value={userAnswer}
                   onChange={(e) => setUserAnswer(e.target.value)}
                   className="w-full h-64 px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none text-slate-700 leading-relaxed"
-                  placeholder="请在此输入你的面试答案..."
+                  placeholder="请在此输入你的面试答案，或点击右上角语音答题..."
                 />
                 <div className="text-right text-sm text-slate-400 mt-2">
                   {userAnswer.length} 字
