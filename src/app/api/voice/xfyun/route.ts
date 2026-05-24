@@ -3,7 +3,7 @@ import { requireAuth } from '@/lib/auth'
 
 /**
  * 讯飞语音识别API代理
- * 使用录音文件转写API（支持webm格式）
+ * 使用录音文件转写API
  * 文档：https://www.xfyun.cn/doc/asr/lfasr/API.html
  */
 
@@ -58,11 +58,17 @@ export async function POST(request: Request) {
     const appId = '57c0ec9c'
     const apiSecret = 'NjQxZjgzNzdlNWZkNjM3NWQ3ZTA0MzI1'
 
+    // 将base64转为二进制，计算实际文件大小
+    const audioBuffer = Buffer.from(audio, 'base64')
+    const fileLen = audioBuffer.length
+
+    console.log('音频信息:', { fileLen, base64Len: audio.length })
+
     // 1. 预处理 - 获取task_id
     const timestamp = Math.floor(Date.now() / 1000).toString()
     const signa = await generateSigna(appId, apiSecret, timestamp)
 
-    console.log('讯飞预处理请求:', { app_id: appId, ts: timestamp, signa: signa.substring(0, 10) + '...' })
+    console.log('讯飞预处理请求:', { app_id: appId, ts: timestamp, file_len: fileLen })
 
     const prepareResponse = await fetch('https://raasr.xfyun.cn/api/prepare', {
       method: 'POST',
@@ -73,8 +79,8 @@ export async function POST(request: Request) {
         app_id: appId,
         signa: signa,
         ts: timestamp,
-        file_len: audio.length.toString(),
-        file_name: 'voice.webm',
+        file_len: fileLen.toString(),
+        file_name: 'voice.wav',
         slice_num: '1',
         language: 'cn',
       }),
@@ -84,8 +90,10 @@ export async function POST(request: Request) {
     console.log('讯飞预处理结果:', prepareResult)
 
     if (prepareResult.ok !== 0) {
+      const errorMsg = prepareResult.failed || `预处理失败(err_no:${prepareResult.err_no})`
+      console.error('预处理失败:', errorMsg)
       return NextResponse.json(
-        { error: prepareResult.failed || `预处理失败(err_no:${prepareResult.err_no})` },
+        { error: errorMsg },
         { status: 500 }
       )
     }
@@ -98,12 +106,11 @@ export async function POST(request: Request) {
       )
     }
 
+    console.log('获取到taskId:', taskId)
+
     // 2. 上传文件（multipart/form-data）
     const uploadTimestamp = Math.floor(Date.now() / 1000).toString()
     const uploadSigna = await generateSigna(appId, apiSecret, uploadTimestamp)
-
-    // 将base64转为二进制
-    const audioBuffer = Buffer.from(audio, 'base64')
 
     const formData = new FormData()
     formData.append('app_id', appId)
@@ -122,8 +129,10 @@ export async function POST(request: Request) {
     console.log('讯飞上传结果:', uploadResult)
 
     if (uploadResult.ok !== 0) {
+      const errorMsg = uploadResult.failed || `上传失败(err_no:${uploadResult.err_no})`
+      console.error('上传失败:', errorMsg)
       return NextResponse.json(
-        { error: uploadResult.failed || `上传失败(err_no:${uploadResult.err_no})` },
+        { error: errorMsg },
         { status: 500 }
       )
     }
@@ -149,8 +158,10 @@ export async function POST(request: Request) {
     console.log('讯飞合并结果:', mergeResult)
 
     if (mergeResult.ok !== 0) {
+      const errorMsg = mergeResult.failed || `合并失败(err_no:${mergeResult.err_no})`
+      console.error('合并失败:', errorMsg)
       return NextResponse.json(
-        { error: mergeResult.failed || `合并失败(err_no:${mergeResult.err_no})` },
+        { error: errorMsg },
         { status: 500 }
       )
     }
@@ -237,7 +248,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error('Voice recognition error:', error)
     return NextResponse.json(
-      { error: '语音识别服务异常' },
+      { error: `语音识别服务异常: ${error instanceof Error ? error.message : '未知错误'}` },
       { status: 500 }
     )
   }

@@ -83,8 +83,17 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
       // 请求麦克风权限
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
 
-      // 创建MediaRecorder
-      const mediaRecorder = new MediaRecorder(stream)
+      // 创建MediaRecorder，尝试使用支持的格式
+      let mimeType = 'audio/webm'
+      if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        mimeType = 'audio/mp4'
+      } else if (MediaRecorder.isTypeSupported('audio/mp3')) {
+        mimeType = 'audio/mp3'
+      } else if (MediaRecorder.isTypeSupported('audio/wav')) {
+        mimeType = 'audio/wav'
+      }
+      
+      const mediaRecorder = new MediaRecorder(stream, { mimeType })
       mediaRecorderRef.current = mediaRecorder
 
       mediaRecorder.ondataavailable = (event) => {
@@ -98,7 +107,7 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
         stream.getTracks().forEach(track => track.stop())
 
         // 合并音频数据
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+        const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' })
 
         if (audioBlob.size === 0) {
           setError('录音数据为空')
