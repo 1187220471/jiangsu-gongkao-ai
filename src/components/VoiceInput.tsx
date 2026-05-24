@@ -93,11 +93,21 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
       ws.onopen = () => {
         console.log('阿里云WebSocket连接成功')
 
+        // 生成符合阿里云要求的ID（16位十六进制字符串）
+        const generateId = () => {
+          return Array.from({length: 16}, () => 
+            Math.floor(Math.random() * 16).toString(16)
+          ).join('')
+        }
+
+        const messageId = generateId()
+        const taskId = generateId()
+
         // 发送开始识别指令
         const startCmd = {
           header: {
-            message_id: crypto.randomUUID(),
-            task_id: crypto.randomUUID(),
+            message_id: messageId,
+            task_id: taskId,
             namespace: 'SpeechRecognizer',
             name: 'StartRecognition',
             appkey: tokenData.appKey,
