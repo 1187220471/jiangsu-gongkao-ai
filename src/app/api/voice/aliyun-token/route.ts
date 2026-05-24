@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     }
 
     // 动态导入SDK（避免构建时问题）
-    const getToken = require('alibabacloud-nls/lib/token')
+    const getToken = require('alibabacloud-nls').Nls?.getToken || require('alibabacloud-nls/lib/token')
 
     // 获取Token
     const result = await getToken({
