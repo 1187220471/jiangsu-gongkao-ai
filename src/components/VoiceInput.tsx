@@ -96,23 +96,37 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
         // 发送开始识别指令
         const startCmd = {
           header: {
-            message_id: Date.now().toString(),
-            task_id: Date.now().toString(),
+            message_id: crypto.randomUUID(),
+            task_id: crypto.randomUUID(),
             namespace: 'SpeechRecognizer',
             name: 'StartRecognition',
             appkey: tokenData.appKey,
           },
           payload: {
-            format: 'opus',
+            format: 'pcm',
             sample_rate: 16000,
             enable_intermediate_result: true,
             enable_punctuation_prediction: true,
+            enable_inverse_text_normalization: true,
           },
         }
         ws.send(JSON.stringify(startCmd))
 
-        // 开始录音
-        mediaRecorder.start(100) // 每100ms发送一次数据
+        // 开始录音 - 使用PCM格式
+        const options = { mimeType: 'audio/webm;codecs=opus' }
+        const recorder = new MediaRecorder(stream, options)
+        mediaRecorderRef.current = recorder
+
+        recorder.ondataavailable = (event) => {
+          if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+            event.data.arrayBuffer().then((buffer) => {
+              // 转换为Int16Array发送
+              ws.send(buffer)
+            })
+          }
+        }
+
+        recorder.start(100) // 每100ms发送一次数据
         setIsRecording(true)
         startTimeRef.current = Date.now()
 
@@ -129,7 +143,9 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
         const data = JSON.parse(event.data)
         console.log('阿里云消息:', data)
 
-        if (data.header?.name === 'RecognitionResultChanged') {
+        if (data.header?.name === 'RecognitionStarted') {
+          console.log('识别已开始')
+        } else if (data.header?.name === 'RecognitionResultChanged') {
           // 中间结果
           const text = data.payload?.result || ''
           setTranscript(text)
@@ -140,7 +156,8 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
           setTranscript(fullText)
           onTranscript(fullText)
         } else if (data.header?.name === 'Error') {
-          setError(`识别错误: ${data.payload?.message || '未知错误'}`)
+          console.error('阿里云识别错误:', data)
+          setError(`识别错误: ${data.payload?.message || data.header?.status_message || '未知错误'}`)
           stopRecording()
         }
       }
@@ -156,14 +173,6 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
         stopRecording()
       }
 
-      // 发送音频数据
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-          event.data.arrayBuffer().then((buffer) => {
-            ws.send(buffer)
-          })
-        }
-      }
 
     } catch (err: any) {
       console.error('启动阿里云录音失败:', err)
