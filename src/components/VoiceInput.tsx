@@ -27,6 +27,9 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
   const startTimeRef = useRef<number>(0)
   const wsRef = useRef<WebSocket | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const processorRef = useRef<ScriptProcessorNode | null>(null)
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
 
   // 6分钟超时
   const MAX_DURATION = 6 * 60 * 1000
@@ -55,6 +58,24 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
       } catch (e) {}
       mediaRecorderRef.current = null
     }
+    if (processorRef.current) {
+      try {
+        processorRef.current.disconnect()
+      } catch (e) {}
+      processorRef.current = null
+    }
+    if (sourceRef.current) {
+      try {
+        sourceRef.current.disconnect()
+      } catch (e) {}
+      sourceRef.current = null
+    }
+    if (audioContextRef.current) {
+      try {
+        audioContextRef.current.close()
+      } catch (e) {}
+      audioContextRef.current = null
+    }
   }, [])
 
   useEffect(() => {
@@ -77,12 +98,20 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
         return
       }
 
-      // 2. 获取麦克风权限
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // 2. 获取麦克风权限（指定PCM格式参数）
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+        }
+      })
 
-      // 3. 创建MediaRecorder
-      const mediaRecorder = new MediaRecorder(stream)
-      mediaRecorderRef.current = mediaRecorder
+      // 3. 创建音频上下文和处理节点
+      const audioContext = new AudioContext({ sampleRate: 16000 })
+      const source = audioContext.createMediaStreamSource(stream)
+      const processor = audioContext.createScriptProcessor(4096, 1, 1)
 
       // 4. 连接阿里云WebSocket
       const wsUrl = `wss://nls-gateway.cn-shanghai.aliyuncs.com/ws/v1?token=${tokenData.token}`
@@ -123,21 +152,28 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
         }
         ws.send(JSON.stringify(startCmd))
 
-        // 开始录音 - 使用PCM格式
-        const options = { mimeType: 'audio/webm;codecs=opus' }
-        const recorder = new MediaRecorder(stream, options)
-        mediaRecorderRef.current = recorder
-
-        recorder.ondataavailable = (event) => {
-          if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-            event.data.arrayBuffer().then((buffer) => {
-              // 转换为Int16Array发送
-              ws.send(buffer)
-            })
+        // 开始录音 - 使用ScriptProcessor获取PCM数据
+        processor.onaudioprocess = (e) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            const inputData = e.inputBuffer.getChannelData(0)
+            // 将Float32转换为Int16
+            const int16Data = new Int16Array(inputData.length)
+            for (let i = 0; i < inputData.length; i++) {
+              const s = Math.max(-1, Math.min(1, inputData[i]))
+              int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+            }
+            ws.send(int16Data.buffer)
           }
         }
 
-        recorder.start(100) // 每100ms发送一次数据
+        // 保存引用以便清理
+        sourceRef.current = source
+        processorRef.current = processor
+        audioContextRef.current = audioContext
+
+        source.connect(processor)
+        processor.connect(audioContext.destination)
+
         setIsRecording(true)
         startTimeRef.current = Date.now()
         setElapsedTime(0)
