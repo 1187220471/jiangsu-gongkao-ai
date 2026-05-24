@@ -31,6 +31,7 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
   const processorRef = useRef<ScriptProcessorNode | null>(null)
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
   const fullTextRef = useRef<string>('')
+  const lastTextRef = useRef<string>('') // 阿里云上次返回的完整文本，用于算增量
 
   // 6分钟超时
   const MAX_DURATION = 6 * 60 * 1000
@@ -120,6 +121,7 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
       wsRef.current = ws
 
       fullTextRef.current = ''
+      lastTextRef.current = ''
 
       ws.onopen = () => {
         console.log('阿里云WebSocket连接成功')
@@ -196,22 +198,35 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
         if (data.header?.name === 'RecognitionStarted') {
           console.log('识别已开始')
         } else if (data.header?.name === 'RecognitionResultChanged') {
-          // 中间结果 - 实时流式输出到父组件文本框
+          // 中间结果 - 仅发送新增部分到父组件（避免重复叠加）
           const text = data.payload?.result || ''
           if (text) {
+            // 算增量：阿里云每次返回完整累计文本，只取新增部分
+            const newPart = text.startsWith(lastTextRef.current) 
+              ? text.slice(lastTextRef.current.length) 
+              : text
+            lastTextRef.current = text
             fullTextRef.current = text
-            setTranscript(text)
-            onTranscript(text)
+            setTranscript(text) // 组件内实时预览用完整文本
+            if (newPart) {
+              onTranscript(newPart) // 父组件用增量文本
+            }
           }
         } else if (data.header?.name === 'RecognitionCompleted') {
-          // 最终结果
+          // 最终结果 - 阿里云可能会有小幅修正，只发修正部分
           const text = data.payload?.result || ''
           if (text) {
             fullTextRef.current = text
           }
           console.log('识别完成，最终文本:', fullTextRef.current)
           setTranscript(fullTextRef.current)
-          onTranscript(fullTextRef.current)
+          // 最终结果可能有修正，算差异部分
+          const correction = text.startsWith(lastTextRef.current) 
+            ? text.slice(lastTextRef.current.length) 
+            : text
+          if (correction) {
+            onTranscript(correction)
+          }
         } else if (data.header?.name === 'Error') {
           console.error('阿里云识别错误:', JSON.stringify(data, null, 2))
           setError(`识别错误: ${data.payload?.message || data.header?.status_message || '未知错误'}`)
@@ -283,10 +298,16 @@ export default function VoiceInput({ onTranscript, disabled }: VoiceInputProps) 
           wsRef.current.close()
           wsRef.current = null
         }
-        // 确保最终结果已传递
+        // 确保最终结果已传递（仅发送补充部分）
         if (fullTextRef.current) {
-          console.log('停止录音，传递最终文本:', fullTextRef.current)
-          onTranscript(fullTextRef.current)
+          const fallbackText = fullTextRef.current
+          const correction = fallbackText.startsWith(lastTextRef.current) 
+            ? fallbackText.slice(lastTextRef.current.length) 
+            : fallbackText
+          if (correction) {
+            console.log('停止录音，补充文本:', correction)
+            onTranscript(correction)
+          }
         }
         setIsRecording(false)
         setElapsedTime(0)
