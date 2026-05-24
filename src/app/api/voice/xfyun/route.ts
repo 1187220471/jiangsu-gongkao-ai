@@ -43,7 +43,8 @@ export async function POST(request: Request) {
 
     // 讯飞配置
     const appId = '57c0ec9c'
-    const apiSecret = 'NjQxZjgzNzdlNWZkNjM3NWQ3ZTA0MzI1'
+    const apiKey = 'b7ed51fb8d8a0bbb7277278f6e120bfb'  // 用于签名
+    const apiSecret = 'NjQxZjgzNzdlNWZkNjM3NWQ3ZTA0MzI1'  // 备用
 
     // 将base64转为二进制，计算实际文件大小
     const audioBuffer = Buffer.from(audio, 'base64')
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
 
     // 1. 预处理 - 获取task_id
     const timestamp = Math.floor(Date.now() / 1000).toString()
-    const signa = generateSigna(appId, apiSecret, timestamp)
+    const signa = generateSigna(appId, apiKey, timestamp)
 
     console.log('讯飞预处理请求:', { app_id: appId, ts: timestamp, file_len: fileLen })
 
@@ -97,7 +98,7 @@ export async function POST(request: Request) {
 
     // 2. 上传文件（multipart/form-data）
     const uploadTimestamp = Math.floor(Date.now() / 1000).toString()
-    const uploadSigna = generateSigna(appId, apiSecret, uploadTimestamp)
+    const uploadSigna = generateSigna(appId, apiKey, uploadTimestamp)
 
     const formData = new FormData()
     formData.append('app_id', appId)
@@ -126,7 +127,7 @@ export async function POST(request: Request) {
 
     // 3. 合并文件
     const mergeTimestamp = Math.floor(Date.now() / 1000).toString()
-    const mergeSigna = generateSigna(appId, apiSecret, mergeTimestamp)
+    const mergeSigna = generateSigna(appId, apiKey, mergeTimestamp)
 
     const mergeResponse = await fetch('https://raasr.xfyun.cn/api/merge', {
       method: 'POST',
@@ -163,7 +164,7 @@ export async function POST(request: Request) {
       attempts++
 
       const queryTimestamp = Math.floor(Date.now() / 1000).toString()
-      const querySigna = generateSigna(appId, apiSecret, queryTimestamp)
+      const querySigna = generateSigna(appId, apiKey, queryTimestamp)
 
       // 查询进度
       const progressResponse = await fetch('https://raasr.xfyun.cn/api/getProgress', {
@@ -192,7 +193,7 @@ export async function POST(request: Request) {
       if (progressData.status === 9) {
         // 获取结果
         const resultTimestamp = Math.floor(Date.now() / 1000).toString()
-        const resultSigna = generateSigna(appId, apiSecret, resultTimestamp)
+        const resultSigna = generateSigna(appId, apiKey, resultTimestamp)
 
         const resultResponse = await fetch('https://raasr.xfyun.cn/api/getResult', {
           method: 'POST',
