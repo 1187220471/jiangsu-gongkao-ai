@@ -335,9 +335,7 @@ export async function GET(request: NextRequest) {
     console.log(`✅ AI初筛完成，共 ${allNews.length} 条（≥6分）`)
     console.log(`✅ AI精选完成，共 ${topNews.length} 条`)
 
-    // 3. 存入数据库
-    const today = new Date().toISOString().split('T')[0]
-
+    // 3. 存入数据库（today 已在开头定义）
     await prisma.dailyNews.upsert({
       where: { date: today },
       update: {
