@@ -282,6 +282,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'AI API Key not configured' }, { status: 500 })
     }
 
+    // 检查今天是否已经有数据，防止重复执行（Vercel Cron 漂移或本地构建触发）
+    const today = new Date().toISOString().split('T')[0]
+    const existing = await prisma.dailyNews.findUnique({
+      where: { date: today },
+    })
+    if (existing) {
+      console.log(`[${new Date().toISOString()}] 今日新闻已存在 (${today})，跳过重复执行`)
+      return NextResponse.json({
+        success: true,
+        date: today,
+        message: '今日新闻已存在，跳过重复执行',
+        skipped: true,
+      })
+    }
+
     console.log(`[${new Date().toISOString()}] 开始抓取每日新闻...`)
 
     // 1. 抓取所有网站
