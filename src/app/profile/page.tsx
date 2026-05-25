@@ -10,10 +10,10 @@ interface ProfileData {
     nickname: string | null
     createdAt: string
   }
-  membership: {
-    isVip: boolean
-    vipType: string
-    vipExpire: string | null
+  access: {
+    hasAccess: boolean
+    accessLevel: string
+    accessExpire: string | null
     remainingFree: number
   }
   stats: {
@@ -204,22 +204,22 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* 会员状态卡片 */}
+        {/* 邀请权限状态卡片 */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-          <h3 className="text-lg font-bold text-slate-800 mb-4">会员状态</h3>
+          <h3 className="text-lg font-bold text-slate-800 mb-4">邀请权限</h3>
 
-          {profile.membership.isVip ? (
-            <div className={`rounded-xl p-4 border ${profile.membership.vipType === 'year' ? 'bg-purple-50 border-purple-200' : 'bg-yellow-50 border-yellow-200'}`}>
+          {profile.access.hasAccess ? (
+            <div className={`rounded-xl p-4 border ${profile.access.accessLevel === 'year' ? 'bg-purple-50 border-purple-200' : 'bg-yellow-50 border-yellow-200'}`}>
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-2xl">{profile.membership.vipType === 'year' ? '👑' : '⭐'}</span>
-                <span className={`font-bold ${profile.membership.vipType === 'year' ? 'text-purple-800' : 'text-yellow-800'}`}>
-                  {profile.membership.vipType === 'year' ? '年度会员' : '月度会员'}
+                <span className="text-2xl">{profile.access.accessLevel === 'year' ? '👑' : '⭐'}</span>
+                <span className={`font-bold ${profile.access.accessLevel === 'year' ? 'text-purple-800' : 'text-yellow-800'}`}>
+                  {profile.access.accessLevel === 'year' ? '长期邀请用户' : '邀请用户'}
                 </span>
               </div>
-              <p className={`text-sm ${profile.membership.vipType === 'year' ? 'text-purple-700' : 'text-yellow-700'}`}>
-                会员到期时间：{profile.membership.vipExpire}
+              <p className={`text-sm ${profile.access.accessLevel === 'year' ? 'text-purple-700' : 'text-yellow-700'}`}>
+                权限到期时间：{profile.access.accessExpire}
               </p>
-              <p className={`text-sm mt-1 ${profile.membership.vipType === 'year' ? 'text-purple-600' : 'text-yellow-600'}`}>
+              <p className={`text-sm mt-1 ${profile.access.accessLevel === 'year' ? 'text-purple-600' : 'text-yellow-600'}`}>
                 无限次使用所有功能
               </p>
             </div>
@@ -231,7 +231,7 @@ export default function Profile() {
               </div>
               <p className="text-sm text-slate-600">
                 每日免费 <strong>5</strong> 次AI练习，今日剩余{' '}
-                <strong>{profile.membership.remainingFree}</strong> 次
+                <strong>{profile.access.remainingFree}</strong> 次
               </p>
             </div>
           )}
@@ -239,7 +239,7 @@ export default function Profile() {
           {/* 邀请码输入 */}
           <form onSubmit={handleValidateInvite} className="mt-4">
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              {profile.membership.isVip ? '续费会员' : '开通会员'}
+              {profile.access.hasAccess ? '延长权限' : '激活邀请权限'}
             </label>
             <div className="flex gap-2">
               <input

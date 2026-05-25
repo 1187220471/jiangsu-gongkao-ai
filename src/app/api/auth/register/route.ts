@@ -40,8 +40,8 @@ export async function POST(request: Request) {
       nickname: nickname || username,
     }
 
-    // 如果有邀请码，校验并设置会员信息
-    let vipInfo = null
+    // 如果有邀请码，校验并设置邀请权限
+    let accessInfo = null
     if (inviteCode && typeof inviteCode === 'string' && inviteCode.trim()) {
       const code = inviteCode.trim().toUpperCase()
       const invite = await prisma.invitationCode.findUnique({
@@ -53,8 +53,8 @@ export async function POST(request: Request) {
         const expireDate = new Date(now)
         expireDate.setDate(expireDate.getDate() + 30)
 
-        userData.vipType = 'month'
-        userData.vipExpire = expireDate
+        userData.accessLevel = 'month'
+        userData.accessExpire = expireDate
 
         // 标记邀请码为已使用
         await prisma.invitationCode.update({
@@ -65,9 +65,9 @@ export async function POST(request: Request) {
           },
         })
 
-        vipInfo = {
-          vipType: 'month',
-          vipExpire: expireDate.toISOString().split('T')[0],
+        accessInfo = {
+          accessLevel: 'month',
+          accessExpire: expireDate.toISOString().split('T')[0],
         }
       }
     }
@@ -82,9 +82,9 @@ export async function POST(request: Request) {
     })
 
     return NextResponse.json({
-      message: vipInfo ? '注册成功，会员已开通！' : '注册成功',
+      message: accessInfo ? '注册成功，邀请权限已激活！' : '注册成功',
       user,
-      vipInfo,
+      accessInfo,
     })
   } catch (error) {
     console.error('Register error:', error)

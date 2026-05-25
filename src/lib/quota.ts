@@ -8,8 +8,8 @@ export interface QuotaCheckResult {
 
 /**
  * 检查用户是否有额度调用AI服务
- * - VIP用户：无限次（在有效期内）
- * - 普通用户：每日5次免费，超出后需要付费
+ * - 邀请用户：无限次（在有效期内）
+ * - 普通用户：每日5次免费
  */
 export async function checkQuota(userId: string): Promise<QuotaCheckResult> {
   const user = await prisma.user.findUnique({
@@ -18,8 +18,8 @@ export async function checkQuota(userId: string): Promise<QuotaCheckResult> {
       dailyFreeCount: true,
       freeCountResetAt: true,
       coins: true,
-      vipType: true,
-      vipExpire: true,
+      accessLevel: true,
+      accessExpire: true,
     },
   })
 
@@ -27,10 +27,10 @@ export async function checkQuota(userId: string): Promise<QuotaCheckResult> {
     return { allowed: false, remainingFree: 0, message: '用户不存在' }
   }
 
-  // 1. 检查是否是VIP且在有效期内
+  // 1. 检查是否是邀请用户且在有效期内
   const now = new Date()
-  if (user.vipType !== 'none' && user.vipExpire && user.vipExpire > now) {
-    return { allowed: true, remainingFree: 999, message: 'VIP会员，无限使用' }
+  if (user.accessLevel !== 'none' && user.accessExpire && user.accessExpire > now) {
+    return { allowed: true, remainingFree: 999, message: '邀请用户，无限使用' }
   }
 
   // 2. 检查是否需要重置每日免费次数（跨天了）
@@ -58,7 +58,7 @@ export async function checkQuota(userId: string): Promise<QuotaCheckResult> {
     }
   }
 
-  // 4. 免费次数用完了，检查是否有练习币（后续付费机制）
+  // 4. 免费次数用完了，检查是否有练习币
   if (user.coins > 0) {
     return {
       allowed: true,
@@ -84,16 +84,16 @@ export async function deductQuota(userId: string): Promise<void> {
     select: {
       dailyFreeCount: true,
       coins: true,
-      vipType: true,
-      vipExpire: true,
+      accessLevel: true,
+      accessExpire: true,
     },
   })
 
   if (!user) return
 
   const now = new Date()
-  // VIP用户不扣额度
-  if (user.vipType !== 'none' && user.vipExpire && user.vipExpire > now) {
+  // 邀请用户不扣额度
+  if (user.accessLevel !== 'none' && user.accessExpire && user.accessExpire > now) {
     return
   }
 
@@ -126,8 +126,8 @@ export async function getQuotaInfo(userId: string) {
       dailyFreeCount: true,
       freeCountResetAt: true,
       coins: true,
-      vipType: true,
-      vipExpire: true,
+      accessLevel: true,
+      accessExpire: true,
     },
   })
 
@@ -142,40 +142,40 @@ export async function getQuotaInfo(userId: string) {
     remainingFree = 5 // 跨天了，还没重置，前端显示5次
   }
 
-  const isVip = user.vipType !== 'none' && user.vipExpire && user.vipExpire > now
+  const hasAccess = user.accessLevel !== 'none' && user.accessExpire && user.accessExpire > now
 
   return {
-    isVip,
-    vipType: user.vipType,
-    vipExpire: user.vipExpire,
-    remainingFree: isVip ? 999 : remainingFree,
+    hasAccess,
+    accessLevel: user.accessLevel,
+    accessExpire: user.accessExpire,
+    remainingFree: hasAccess ? 999 : remainingFree,
     coins: user.coins,
   }
 }
 
 /**
- * 检查用户是否为有效VIP会员
- * 用于会员专享功能（如套题训练）
+ * 检查用户是否为有效邀请用户
+ * 用于邀请专享功能（如套题训练）
  */
-export async function checkVip(userId: string): Promise<{ isVip: boolean; message: string }> {
+export async function checkAccess(userId: string): Promise<{ hasAccess: boolean; message: string }> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
-      vipType: true,
-      vipExpire: true,
+      accessLevel: true,
+      accessExpire: true,
     },
   })
 
   if (!user) {
-    return { isVip: false, message: '用户不存在' }
+    return { hasAccess: false, message: '用户不存在' }
   }
 
   const now = new Date()
-  const isVip = user.vipType !== 'none' && user.vipExpire && user.vipExpire > now
+  const hasAccess = user.accessLevel !== 'none' && user.accessExpire && user.accessExpire > now
 
-  if (isVip) {
-    return { isVip: true, message: 'VIP会员' }
+  if (hasAccess) {
+    return { hasAccess: true, message: '邀请用户' }
   }
 
-  return { isVip: false, message: '该功能为会员专享' }
+  return { hasAccess: false, message: '该功能为邀请用户专享' }
 }

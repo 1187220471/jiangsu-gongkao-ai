@@ -17,8 +17,8 @@ export async function GET(request: Request) {
         username: true,
         nickname: true,
         createdAt: true,
-        vipType: true,
-        vipExpire: true,
+        accessLevel: true,
+        accessExpire: true,
       },
     })
 
@@ -55,10 +55,10 @@ export async function GET(request: Request) {
         nickname: user.nickname,
         createdAt: user.createdAt.toISOString().split('T')[0],
       },
-      membership: {
-        isVip: quotaInfo?.isVip || false,
-        vipType: user.vipType,
-        vipExpire: user.vipExpire ? user.vipExpire.toISOString().split('T')[0] : null,
+      access: {
+        hasAccess: quotaInfo?.hasAccess || false,
+        accessLevel: user.accessLevel,
+        accessExpire: user.accessExpire ? user.accessExpire.toISOString().split('T')[0] : null,
         remainingFree: quotaInfo?.remainingFree || 0,
       },
       stats: {

@@ -27,7 +27,7 @@ export default function Practice() {
   const [score, setScore] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'select' | 'question' | 'answer' | 'result'>('select')
-  const [showVipModal, setShowVipModal] = useState(false)
+  const [showAccessModal, setShowAccessModal] = useState(false)
   const [setLoadingMode, setSetLoadingMode] = useState<string | null>(null)
   const [isVoiceRecording, setIsVoiceRecording] = useState(false)
   const voicePreviewRef = useRef<HTMLDivElement>(null)
@@ -166,7 +166,7 @@ export default function Practice() {
       })
 
       if (res.status === 403) {
-        setShowVipModal(true)
+        setShowAccessModal(true)
         setSetLoadingMode(null)
         return
       }
@@ -250,7 +250,7 @@ export default function Practice() {
             {/* 套题训练入口 */}
             <div className="border-t border-slate-200 pt-8">
               <h3 className="text-lg font-bold text-slate-800 mb-4 text-center">
-                套题训练 <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full ml-2">会员专享</span>
+                套题训练 <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full ml-2">邀请用户专享</span>
               </h3>
               <p className="text-sm text-slate-500 text-center mb-4">
                 模拟真实考场，一次性生成完整套题，支持下载Word文档
@@ -460,17 +460,17 @@ export default function Practice() {
             </div>
           </div>
         )}
-        {/* VIP弹窗 */}
-        {showVipModal && (
+        {/* 权限弹窗 */}
+        {showAccessModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-2xl p-8 max-w-sm mx-4 text-center">
               <div className="text-4xl mb-4">🔒</div>
-              <h3 className="text-lg font-bold text-slate-800 mb-2">该功能为会员专享</h3>
+              <h3 className="text-lg font-bold text-slate-800 mb-2">该功能为邀请用户专享</h3>
               <p className="text-sm text-slate-500 mb-6">
-                套题训练功能仅限会员使用，可模拟真实考场环境，支持下载Word文档。
+                套题训练功能仅限邀请用户使用，可模拟真实考场环境，支持下载Word文档。
               </p>
               <button
-                onClick={() => setShowVipModal(false)}
+                onClick={() => setShowAccessModal(false)}
                 className="bg-primary-600 hover:bg-primary-700 text-white font-medium px-6 py-2.5 rounded-xl transition-colors"
               >
                 我知道了

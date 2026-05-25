@@ -17,8 +17,8 @@ model User {
   dailyFreeCount    Int      @default(5)       // 每日剩余免费次数
   freeCountResetAt  DateTime @default(now())   // 免费次数重置时间
   coins             Int      @default(0)        // 练习币余额
-  vipType           String   @default("none")   // none / month / year
-  vipExpire         DateTime?                   // 会员过期时间
+  accessLevel       String   @default("none")   // none / month / year（邀请制权限）
+  accessExpire      DateTime?                   // 邀请权限过期时间
 
   // 去重缓存：最近使用过的出题主题
   recentTopics      String[] @default([])

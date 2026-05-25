@@ -166,7 +166,7 @@ export default function SetTrainingPage() {
               <p className="text-sm text-slate-500 mt-1">共 {setData.questions.length} 道题 · 建议作答时间 {setData.time}</p>
             </div>
             <span className="bg-amber-100 text-amber-700 text-xs font-medium px-3 py-1 rounded-full">
-              会员专享
+              邀请用户专享
             </span>
           </div>
         </div>

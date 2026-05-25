@@ -126,10 +126,10 @@ export default function Register() {
                 value={inviteCode}
                 onChange={(e) => setInviteCode(e.target.value)}
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                placeholder="有邀请码？输入即可开通会员"
+                placeholder="有邀请码？输入即可激活权限"
               />
               <p className="text-xs text-slate-400 mt-1">
-                输入邀请码可立即获得30天会员权限
+                输入邀请码可立即获得30天使用权限
               </p>
             </div>
 

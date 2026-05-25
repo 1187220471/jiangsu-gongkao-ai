@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { generateQuestion } from '@/lib/ai'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
-import { checkVip } from '@/lib/quota'
+import { checkAccess } from '@/lib/quota'
 
 // 套题题型概率配置
 const SET_CONFIG = {
@@ -46,11 +46,11 @@ export async function POST(request: Request) {
       return auth.response
     }
 
-    // 检查是否为VIP
-    const vipCheck = await checkVip(auth.userId)
-    if (!vipCheck.isVip) {
+    // 检查是否为邀请用户
+    const accessCheck = await checkAccess(auth.userId)
+    if (!accessCheck.hasAccess) {
       return NextResponse.json(
-        { error: vipCheck.message },
+        { error: accessCheck.message },
         { status: 403 }
       )
     }

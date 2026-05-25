@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 interface QuotaInfo {
-  isVip: boolean
-  vipType: string
+  hasAccess: boolean
+  accessLevel: string
   remainingFree: number
   coins: number
 }
@@ -60,10 +60,10 @@ export default function Home() {
 
   const getQuotaDisplay = () => {
     if (!quota) return null
-    if (quota.isVip) {
+    if (quota.hasAccess) {
       return (
         <span className="text-sm bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">
-          ⭐ VIP会员
+          ⭐ 已邀请
         </span>
       )
     }
@@ -161,7 +161,7 @@ export default function Home() {
         </div>
 
         {/* 额度提示 */}
-        {quota && !quota.isVip && (
+        {quota && !quota.hasAccess && (
           <div className="mt-8 bg-blue-50 rounded-xl p-4 border border-blue-200 max-w-3xl mx-auto">
             <div className="flex items-center gap-2">
               <span className="text-lg">💡</span>
@@ -172,12 +172,12 @@ export default function Home() {
           </div>
         )}
 
-        {quota && quota.isVip && (
+        {quota && quota.hasAccess && (
           <div className="mt-8 bg-yellow-50 rounded-xl p-4 border border-yellow-200 max-w-3xl mx-auto">
             <div className="flex items-center gap-2">
               <span className="text-lg">⭐</span>
               <span className="text-sm text-yellow-800">
-                VIP会员，无限次使用，感谢您的支持！
+                已邀请用户，无限次使用，感谢您的支持！
               </span>
             </div>
           </div>

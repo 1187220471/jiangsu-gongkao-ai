@@ -33,8 +33,8 @@ export async function POST(request: Request) {
       where: { id: auth.userId },
       select: {
         id: true,
-        vipType: true,
-        vipExpire: true,
+        accessLevel: true,
+        accessExpire: true,
       },
     })
 
@@ -46,21 +46,21 @@ export async function POST(request: Request) {
 
     // 根据邀请码类型确定续费天数
     const daysToAdd = inviteCode.type === 'year' ? 365 : 30
-    const typeLabel = inviteCode.type === 'year' ? '年度会员' : '月度会员'
+    const typeLabel = inviteCode.type === 'year' ? '365天邀请权限' : '30天邀请权限'
 
-    // 续费逻辑：已过期从当天起算，未过期则顺延
+    // 续期逻辑：已过期从当天起算，未过期则顺延
     let newExpireDate: Date
-    if (user.vipExpire && user.vipExpire > now) {
+    if (user.accessExpire && user.accessExpire > now) {
       // 未过期，在现有到期日基础上顺延
-      newExpireDate = new Date(user.vipExpire)
+      newExpireDate = new Date(user.accessExpire)
       newExpireDate.setDate(newExpireDate.getDate() + daysToAdd)
     } else {
-      // 已过期或从未开过，从当天起算
+      // 已过期或从未激活过，从当天起算
       newExpireDate = new Date(now)
       newExpireDate.setDate(newExpireDate.getDate() + daysToAdd)
     }
 
-    // 事务：更新邀请码状态 + 更新用户会员信息
+    // 事务：更新邀请码状态 + 更新用户权限信息
     await prisma.$transaction([
       prisma.invitationCode.update({
         where: { id: inviteCode.id },
@@ -73,16 +73,16 @@ export async function POST(request: Request) {
       prisma.user.update({
         where: { id: user.id },
         data: {
-          vipType: inviteCode.type,
-          vipExpire: newExpireDate,
+          accessLevel: inviteCode.type,
+          accessExpire: newExpireDate,
         },
       }),
     ])
 
     return NextResponse.json({
-      message: `${typeLabel}开通成功`,
-      vipType: inviteCode.type,
-      vipExpire: newExpireDate.toISOString().split('T')[0],
+      message: `${typeLabel}激活成功`,
+      accessLevel: inviteCode.type,
+      accessExpire: newExpireDate.toISOString().split('T')[0],
     })
   } catch (error) {
     console.error('Validate invite code error:', error)
