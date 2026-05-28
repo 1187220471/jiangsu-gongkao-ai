@@ -247,18 +247,16 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
         setProgress(`识别中...第 ${segIdx + 1}/${totalSegments} 段，正在识别，请耐心等待`)
         setRealtimeText('') // 清空上一段的实时文字
 
-        // 每段获取新的Token（阿里云Token可能单次使用）
+        // 复用第1段获取的Token（阿里云Token有效期10分钟，足够覆盖全部分段）
         let segToken: string
         let segAppKey: string
         if (segIdx === 0) {
           segToken = tokenData.token
           segAppKey = tokenData.appKey
         } else {
-          const newTokenRes = await fetch('/api/voice/aliyun-token', { headers: getAuthHeaders() })
-          const newTokenData = await newTokenRes.json()
-          if (!newTokenData.token) throw new Error(`第${segIdx + 1}段Token获取失败`)
-          segToken = newTokenData.token
-          segAppKey = newTokenData.appKey
+          // 如果Token失效才重新获取（通常不需要）
+          segToken = tokenData.token
+          segAppKey = tokenData.appKey
         }
 
         console.log(`开始识别第 ${segIdx + 1}/${totalSegments} 段 (${segIdx * SEGMENT_DURATION}s - ${Math.min((segIdx + 1) * SEGMENT_DURATION, totalSeconds)}s)`)
