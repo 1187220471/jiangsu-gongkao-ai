@@ -10,7 +10,7 @@ interface AudioUploaderProps {
 
 const SAMPLE_RATE = 16000
 const CHUNK_SIZE = 1600       // 100ms of audio
-const CHUNK_INTERVAL = 50      // 50ms per chunk = 2x real-time speed
+const CHUNK_INTERVAL = 100     // 100ms per chunk = 1x real-time speed
 const SEGMENT_DURATION = 30    // 30 seconds per segment
 const SEGMENT_SAMPLES = SAMPLE_RATE * SEGMENT_DURATION // 480000 samples
 
@@ -241,9 +241,24 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
         const segmentPcm = pcmData.slice(segStart, segEnd)
 
         setProgress(`识别中...第 ${segIdx + 1}/${totalSegments} 段`)
+
+        // 每段获取新的Token（阿里云Token可能单次使用）
+        let segToken: string
+        let segAppKey: string
+        if (segIdx === 0) {
+          segToken = tokenData.token
+          segAppKey = tokenData.appKey
+        } else {
+          const newTokenRes = await fetch('/api/voice/aliyun-token', { headers: getAuthHeaders() })
+          const newTokenData = await newTokenRes.json()
+          if (!newTokenData.token) throw new Error(`第${segIdx + 1}段Token获取失败`)
+          segToken = newTokenData.token
+          segAppKey = newTokenData.appKey
+        }
+
         console.log(`开始识别第 ${segIdx + 1}/${totalSegments} 段 (${segIdx * SEGMENT_DURATION}s - ${Math.min((segIdx + 1) * SEGMENT_DURATION, totalSeconds)}s)`)
 
-        const segmentText = await recognizeSegment(segmentPcm, segIdx, tokenData.token, tokenData.appKey)
+        const segmentText = await recognizeSegment(segmentPcm, segIdx, segToken, segAppKey)
 
         if (segmentText) {
           fullTranscript += (fullTranscript && segmentText ? '' : '') + segmentText
