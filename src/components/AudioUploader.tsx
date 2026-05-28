@@ -112,6 +112,7 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
                     task_id: taskId,
                     namespace: 'SpeechRecognizer',
                     name: 'StopRecognition',
+                    appkey: appKey,
                   },
                 }))
               }
