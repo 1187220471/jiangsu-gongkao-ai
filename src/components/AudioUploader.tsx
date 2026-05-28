@@ -36,9 +36,12 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
       const formData = new FormData()
       formData.append('audio', file)
 
+      const token = localStorage.getItem('token')
       const response = await fetch('/api/voice/transcribe-file', {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         body: formData,
       })
 
