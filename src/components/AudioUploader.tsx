@@ -9,7 +9,7 @@ interface AudioUploaderProps {
 }
 
 /**
- * 阿里云录音文件识别（异步）
+ * 阿里云录音文件识别（后端中转）
  * 支持上传mp3/wav/m4a等格式，自动转写成文字
  * 适合2-5分钟的长音频
  */
@@ -17,67 +17,6 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
   const [isUploading, setIsUploading] = useState(false)
   const [progress, setProgress] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
-
-  // 获取音频格式对应的阿里云format参数
-  const getAudioFormat = (file: File): string => {
-    const type = file.type.toLowerCase()
-    if (type.includes('mp3') || type.includes('mpeg')) return 'mp3'
-    if (type.includes('wav')) return 'wav'
-    if (type.includes('m4a') || type.includes('mp4')) return 'm4a'
-    if (type.includes('ogg')) return 'ogg'
-    if (type.includes('opus')) return 'opus'
-    if (type.includes('flac')) return 'flac'
-    return 'mp3'
-  }
-
-  // 轮询查询识别结果
-  const pollResult = async (token: string, appKey: string, taskId: string): Promise<string> => {
-    const maxAttempts = 60 // 最多轮询2分钟
-    const queryUrl = 'https://nls-gateway.cn-shanghai.aliyuncs.com/stream/v1/FileTranscriber'
-
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise(resolve => setTimeout(resolve, 2000)) // 每2秒查一次
-
-      const response = await fetch(`${queryUrl}?appkey=${appKey}&task_id=${taskId}`, {
-        method: 'GET',
-        headers: {
-          'X-NLS-Token': token,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        console.warn(`轮询第${i + 1}次失败: ${response.status}`)
-        continue
-      }
-
-      const result = await response.json()
-      console.log(`轮询第${i + 1}次结果:`, result)
-
-      // 检查错误
-      if (result.error_code && result.error_code !== 0) {
-        throw new Error(result.error_message || `识别失败: ${result.error_code}`)
-      }
-
-      // 检查状态
-      const status = result.status_text
-      if (status === 'SUCCESS') {
-        // 识别完成，提取文字
-        const sentences = result.result?.sentences || []
-        const text = sentences.map((s: any) => s.text).join('')
-        if (!text) {
-          throw new Error('识别结果为空，请检查音频质量')
-        }
-        return text
-      } else if (status === 'FAILED') {
-        throw new Error(result.error_message || '识别任务失败')
-      }
-      // RUNNING 或 QUEUING，继续轮询
-      setProgress(`识别中...(${i + 1}/${maxAttempts})`)
-    }
-
-    throw new Error('识别超时，请重试')
-  }
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -91,72 +30,30 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
     }
 
     setIsUploading(true)
-    setProgress('正在获取识别Token...')
+    setProgress('正在上传并识别...')
 
     try {
-      // 1. 获取阿里云Token
-      const tokenRes = await fetch('/api/voice/aliyun-token', {
-        headers: getAuthHeaders(),
-      })
-      const tokenData = await tokenRes.json()
+      const formData = new FormData()
+      formData.append('audio', file)
 
-      if (!tokenData.token) {
-        throw new Error('获取Token失败: ' + (tokenData.error || '未知错误'))
-      }
-
-      setProgress('正在读取音频文件...')
-
-      // 2. 读取文件并转Base64
-      const arrayBuffer = await file.arrayBuffer()
-      const base64 = btoa(
-        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
-      )
-      const format = getAudioFormat(file)
-
-      setProgress('正在提交识别任务...')
-
-      // 3. 提交识别任务
-      const submitUrl = 'https://nls-gateway.cn-shanghai.aliyuncs.com/stream/v1/FileTranscriber'
-
-      const response = await fetch(submitUrl, {
+      const response = await fetch('/api/voice/transcribe-file', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-NLS-Token': tokenData.token,
-        },
-        body: JSON.stringify({
-          appkey: tokenData.appKey,
-          file_link: `data:audio/${format};base64,${base64}`,
-          format: format,
-          sample_rate: 16000,
-          enable_punctuation_prediction: true,
-          enable_inverse_text_normalization: true,
-        }),
+        headers: getAuthHeaders(),
+        body: formData,
       })
+
+      const data = await response.json()
 
       if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`提交识别任务失败: ${errorText}`)
+        throw new Error(data.error || '识别失败')
       }
 
-      const submitResult = await response.json()
-      console.log('提交识别任务结果:', submitResult)
-
-      if (submitResult.error_code && submitResult.error_code !== 0) {
-        throw new Error(submitResult.error_message || '提交识别任务失败')
+      if (!data.transcript) {
+        throw new Error('识别结果为空，请检查音频质量')
       }
-
-      const taskId = submitResult.task_id
-      if (!taskId) {
-        throw new Error('未获取到任务ID')
-      }
-
-      // 4. 轮询查询结果
-      setProgress('AI识别中，请稍候...')
-      const transcript = await pollResult(tokenData.token, tokenData.appKey, taskId)
 
       setProgress('识别完成')
-      onTranscript(transcript)
+      onTranscript(data.transcript)
     } catch (err: any) {
       console.error('录音识别失败:', err)
       setProgress('识别失败: ' + err.message)
