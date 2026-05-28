@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { getAuthHeaders } from '@/lib/auth'
 import VoiceInput from '@/components/VoiceInput'
+import AudioUploader from '@/components/AudioUploader'
 
 interface QuestionItem {
   index: number
@@ -319,11 +320,17 @@ export default function SetAnswerPage() {
               <label className="block font-medium text-slate-700">
                 你的答案
               </label>
-              <VoiceInput
-                onTranscript={(text) => setCurrentAnswer((prev) => prev + text)}
-                disabled={submitting}
-                onRecordingChange={setIsVoiceRecording}
-              />
+              <div className="flex items-center gap-2">
+                <AudioUploader
+                  onTranscript={(text) => setCurrentAnswer((prev) => prev + text)}
+                  disabled={submitting}
+                />
+                <VoiceInput
+                  onTranscript={(text) => setCurrentAnswer((prev) => prev + text)}
+                  disabled={submitting}
+                  onRecordingChange={setIsVoiceRecording}
+                />
+              </div>
             </div>
             {/* 语音实时转写预览 - 缩小尺寸，放在右侧 */}
             {isVoiceRecording && (

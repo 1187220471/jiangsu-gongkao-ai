@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { getAuthHeaders } from '@/lib/auth'
 import { QUESTION_TYPE_LABELS } from '@/types'
 import VoiceInput from '@/components/VoiceInput'
+import AudioUploader from '@/components/AudioUploader'
 
 const questionTypes = [
   { key: 'social', label: '社会现象类' },
@@ -311,11 +312,17 @@ export default function Practice() {
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-bold text-slate-800">你的答案</h3>
-                  <VoiceInput
-                    onTranscript={(text) => setUserAnswer((prev) => prev + text)}
-                    disabled={loading}
-                    onRecordingChange={setIsVoiceRecording}
-                  />
+                  <div className="flex items-center gap-2">
+                    <AudioUploader
+                      onTranscript={(text) => setUserAnswer((prev) => prev + text)}
+                      disabled={loading}
+                    />
+                    <VoiceInput
+                      onTranscript={(text) => setUserAnswer((prev) => prev + text)}
+                      disabled={loading}
+                      onRecordingChange={setIsVoiceRecording}
+                    />
+                  </div>
                 </div>
                 {/* 语音实时转写预览 - 缩小尺寸，放在右侧 */}
                 {isVoiceRecording && (
