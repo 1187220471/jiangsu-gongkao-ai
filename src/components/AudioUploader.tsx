@@ -8,10 +8,16 @@ interface AudioUploaderProps {
   disabled?: boolean
 }
 
+const SAMPLE_RATE = 16000
+const CHUNK_SIZE = 1600       // 100ms of audio
+const CHUNK_INTERVAL = 50      // 50ms per chunk = 2x real-time speed
+const SEGMENT_DURATION = 30    // 30 seconds per segment
+const SEGMENT_SAMPLES = SAMPLE_RATE * SEGMENT_DURATION // 480000 samples
+
 /**
- * 阿里云录音文件识别
- * 通过Web Audio API解码音频文件，然后通过WebSocket实时识别
- * 支持任意时长的音频文件
+ * 阿里云录音文件识别（分片版）
+ * 通过Web Audio API解码音频文件，按30秒分片，每片独立WebSocket会话
+ * 解决 TOO_LONG_SPEECH (41010104) 错误
  */
 export default function AudioUploader({ onTranscript, disabled }: AudioUploaderProps) {
   const [isUploading, setIsUploading] = useState(false)
@@ -19,11 +25,139 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef(false)
 
+  /** 生成32位十六进制ID（阿里云要求） */
+  const generateId = () =>
+    Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('')
+
+  /** 识别一段音频PCM数据（30秒），返回该段识别文字 */
+  const recognizeSegment = async (
+    pcmData: Float32Array,
+    segmentIndex: number,
+    token: string,
+    appKey: string,
+  ): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const wsUrl = `wss://nls-gateway.cn-shanghai.aliyuncs.com/ws/v1?token=${token}`
+      const ws = new WebSocket(wsUrl)
+      const taskId = generateId()
+
+      let segmentFullText = ''
+      let segmentLastText = ''
+      let isDone = false
+
+      const safeResolve = (text: string) => {
+        if (!isDone) { isDone = true; resolve(text) }
+      }
+      const safeReject = (err: Error) => {
+        if (!isDone) { isDone = true; reject(err) }
+      }
+
+      // 超时保护（每段最多90秒）
+      const timeoutId = setTimeout(() => {
+        safeReject(new Error(`第${segmentIndex + 1}段识别超时`))
+      }, 90 * 1000)
+
+      ws.onopen = () => {
+        const startCmd = {
+          header: {
+            message_id: generateId(),
+            task_id: taskId,
+            namespace: 'SpeechRecognizer',
+            name: 'StartRecognition',
+            appkey: appKey,
+          },
+          payload: {
+            format: 'pcm',
+            sample_rate: SAMPLE_RATE,
+            enable_intermediate_result: true,
+            enable_punctuation_prediction: true,
+            enable_inverse_text_normalization: true,
+          },
+        }
+        ws.send(JSON.stringify(startCmd))
+
+        // 立即开始发送音频数据（无需等待RecognitionStarted）
+        sendSegmentData(ws, pcmData).then(() => {
+          // 发送停止指令
+          ws.send(JSON.stringify({
+            header: {
+              message_id: generateId(),
+              task_id: taskId,
+              namespace: 'SpeechRecognizer',
+              name: 'StopRecognition',
+            },
+          }))
+        }).catch(safeReject)
+      }
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data)
+        const name = data.header?.name
+
+        if (name === 'RecognitionResultChanged') {
+          const text = data.payload?.result || ''
+          if (text) {
+            segmentFullText = text
+            const newPart = getIncrementalText(segmentLastText, text)
+            segmentLastText = text
+            if (newPart) onTranscript(newPart)
+          }
+        } else if (name === 'RecognitionCompleted') {
+          const text = data.payload?.result || ''
+          if (text) {
+            segmentFullText = text
+            const correction = getIncrementalText(segmentLastText, text)
+            if (correction) onTranscript(correction)
+          }
+          clearTimeout(timeoutId)
+          ws.close()
+          safeResolve(segmentFullText)
+        } else if (name === 'TaskFailed' || name === 'Error') {
+          const errMsg = data.payload?.message || data.header?.status_message || '段识别失败'
+          clearTimeout(timeoutId)
+          safeReject(new Error(`第${segmentIndex + 1}段: ${errMsg}`))
+        }
+      }
+
+      ws.onerror = () => safeReject(new Error(`第${segmentIndex + 1}段WebSocket连接错误`))
+      ws.onclose = () => {
+        clearTimeout(timeoutId)
+        if (!isDone) safeResolve(segmentFullText)
+      }
+    })
+  }
+
+  /** 发送一段PCM数据到WebSocket（分块发送+实时速率控制） */
+  async function sendSegmentData(ws: WebSocket, pcmData: Float32Array): Promise<void> {
+    const totalChunks = Math.ceil(pcmData.length / CHUNK_SIZE)
+
+    for (let i = 0; i < totalChunks; i++) {
+      if (abortRef.current) throw new Error('识别已取消')
+      if (ws.readyState !== WebSocket.OPEN) throw new Error('WebSocket已断开')
+
+      const start = i * CHUNK_SIZE
+      const end = Math.min(start + CHUNK_SIZE, pcmData.length)
+      const chunk = pcmData.slice(start, end)
+
+      // Float32 → Int16 (PCM 16bit)
+      const int16Data = new Int16Array(chunk.length)
+      for (let j = 0; j < chunk.length; j++) {
+        const s = Math.max(-1, Math.min(1, chunk[j]))
+        int16Data[j] = s < 0 ? s * 0x8000 : s * 0x7FFF
+      }
+
+      ws.send(int16Data.buffer)
+
+      // 每块等待 CHUNK_INTERVAL ms（2x实时速率，提速不超限）
+      await new Promise(r => setTimeout(r, CHUNK_INTERVAL))
+    }
+  }
+
+  // ---- 主入口 ----
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // 限制文件大小（20MB）
     if (file.size > 20 * 1024 * 1024) {
       setProgress('文件超过20MB，请压缩后上传')
       setTimeout(() => setProgress(''), 3000)
@@ -34,331 +168,118 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
     setProgress('正在准备识别...')
     abortRef.current = false
 
-    let ws: WebSocket | null = null
     let audioContext: AudioContext | null = null
 
     try {
-      // 1. 获取阿里云Token
-      const tokenRes = await fetch('/api/voice/aliyun-token', {
-        headers: getAuthHeaders(),
-      })
+      // 1. 获取Token
+      const tokenRes = await fetch('/api/voice/aliyun-token', { headers: getAuthHeaders() })
       const tokenData = await tokenRes.json()
+      if (!tokenData.token) throw new Error('获取Token失败: ' + (tokenData.error || '未知错误'))
 
-      if (!tokenData.token) {
-        throw new Error('获取Token失败: ' + (tokenData.error || '未知错误'))
-      }
-
+      // 2. 解码音频
       setProgress('正在解码音频...')
-
-      // 2. 用Web Audio API解码音频文件
       const fileBuffer = await file.arrayBuffer()
       audioContext = new AudioContext()
       const audioBuffer = await audioContext.decodeAudioData(fileBuffer)
-
       if (abortRef.current) return
 
-      setProgress('正在识别...')
-
-      // 3. 连接阿里云WebSocket
-      const wsUrl = `wss://nls-gateway.cn-shanghai.aliyuncs.com/ws/v1?token=${tokenData.token}`
-      ws = new WebSocket(wsUrl)
-
-      // 生成32位十六进制ID
-      const generateId = () => {
-        return Array.from({ length: 32 }, () =>
-          Math.floor(Math.random() * 16).toString(16)
-        ).join('')
+      // 3. 提取并重采样到16000Hz
+      const channelData = audioBuffer.getChannelData(0)
+      let pcmData: Float32Array
+      if (audioBuffer.sampleRate !== SAMPLE_RATE) {
+        pcmData = resampleAudio(channelData, audioBuffer.sampleRate, SAMPLE_RATE)
+        console.log(`重采样: ${audioBuffer.sampleRate}Hz → ${SAMPLE_RATE}Hz, ${pcmData.length} 样本`)
+      } else {
+        pcmData = channelData
       }
 
-      const taskId = generateId()
-      let fullText = ''
-      let lastText = ''
-      let isResolved = false // 标记是否已返回结果，防止重复resolve/reject
+      // 4. 计算总时长和段数
+      const totalSeconds = Math.round(pcmData.length / SAMPLE_RATE)
+      const totalSegments = Math.ceil(pcmData.length / SEGMENT_SAMPLES)
+      console.log(`音频时长: ${totalSeconds}s, 共${totalSegments}段`)
 
-      // 执行识别，返回完整文字
-      const transcript = await new Promise<string>((resolve, reject) => {
-        // 设置总超时（5分钟）
-        const timeoutId = setTimeout(() => {
-          if (!isResolved) {
-            isResolved = true
-            reject(new Error('识别超时，请重试'))
-          }
-        }, 5 * 60 * 1000)
+      // 5. 逐段识别
+      let fullTranscript = ''
+      for (let segIdx = 0; segIdx < totalSegments; segIdx++) {
+        if (abortRef.current) break
 
-        ws!.onopen = () => {
-          console.log('阿里云WebSocket连接成功')
+        const segStart = segIdx * SEGMENT_SAMPLES
+        const segEnd = Math.min(segStart + SEGMENT_SAMPLES, pcmData.length)
+        const segmentPcm = pcmData.slice(segStart, segEnd)
 
-          const messageId = generateId()
+        setProgress(`识别中...第 ${segIdx + 1}/${totalSegments} 段`)
+        console.log(`开始识别第 ${segIdx + 1}/${totalSegments} 段 (${segIdx * SEGMENT_DURATION}s - ${Math.min((segIdx + 1) * SEGMENT_DURATION, totalSeconds)}s)`)
 
-          // 发送开始识别指令
-          const startCmd = {
-            header: {
-              message_id: messageId,
-              task_id: taskId,
-              namespace: 'SpeechRecognizer',
-              name: 'StartRecognition',
-              appkey: tokenData.appKey,
-            },
-            payload: {
-              format: 'pcm',
-              sample_rate: 16000,
-              enable_intermediate_result: true,
-              enable_punctuation_prediction: true,
-              enable_inverse_text_normalization: true,
-            },
-          }
-          ws!.send(JSON.stringify(startCmd))
-          console.log('已发送StartRecognition指令')
+        const segmentText = await recognizeSegment(segmentPcm, segIdx, tokenData.token, tokenData.appKey)
 
-          // 开始发送音频数据（不等待，异步发送）
-          sendAudioData(ws!, audioBuffer, () => abortRef.current)
-            .then(() => {
-              console.log('音频数据发送完成')
-              // 发送停止指令
-              const stopCmd = {
-                header: {
-                  message_id: generateId(),
-                  task_id: taskId,
-                  namespace: 'SpeechRecognizer',
-                  name: 'StopRecognition',
-                },
-              }
-              ws!.send(JSON.stringify(stopCmd))
-              console.log('已发送StopRecognition指令')
-            })
-            .catch((err) => {
-              if (!isResolved) {
-                isResolved = true
-                clearTimeout(timeoutId)
-                reject(err)
-              }
-            })
+        if (segmentText) {
+          fullTranscript += (fullTranscript && segmentText ? '' : '') + segmentText
+          console.log(`第${segIdx + 1}段识别结果: "${segmentText}"`)
         }
 
-        ws!.onmessage = (event) => {
-          const data = JSON.parse(event.data)
-          const name = data.header?.name
-          console.log('阿里云消息:', name, data.header?.status_code || '')
-
-          if (name === 'RecognitionStarted') {
-            console.log('识别已开始')
-          } else if (name === 'RecognitionResultChanged') {
-            const text = data.payload?.result || ''
-            if (text) {
-              const newPart = getIncrementalText(lastText, text)
-              lastText = text
-              fullText = text
-              if (newPart) {
-                onTranscript(newPart)
-              }
-            }
-          } else if (name === 'RecognitionCompleted') {
-            const text = data.payload?.result || ''
-            if (text) {
-              fullText = text
-              const correction = getIncrementalText(lastText, text)
-              if (correction) {
-                onTranscript(correction)
-              }
-            }
-            console.log('识别完成，最终文本:', fullText)
-            if (!isResolved) {
-              isResolved = true
-              clearTimeout(timeoutId)
-              resolve(fullText)
-            }
-          } else if (name === 'Error') {
-            const errMsg = data.payload?.message || data.header?.status_message || '未知识别错误'
-            console.error('阿里云识别错误:', errMsg)
-            if (!isResolved) {
-              isResolved = true
-              clearTimeout(timeoutId)
-              reject(new Error(errMsg))
-            }
-          } else if (name === 'TaskFailed') {
-            const errMsg = data.payload?.message || '任务失败'
-            console.error('阿里云任务失败:', errMsg)
-            if (!isResolved) {
-              isResolved = true
-              clearTimeout(timeoutId)
-              reject(new Error(errMsg))
-            }
-          }
+        // 段间间隔（让服务端释放资源）
+        if (segIdx < totalSegments - 1) {
+          await new Promise(r => setTimeout(r, 500))
         }
-
-        ws!.onerror = (error) => {
-          console.error('阿里云WebSocket错误:', error)
-          if (!isResolved) {
-            isResolved = true
-            clearTimeout(timeoutId)
-            reject(new Error('WebSocket连接错误'))
-          }
-        }
-
-        ws!.onclose = (closeEvent) => {
-          console.log('阿里云WebSocket关闭:', closeEvent.code, closeEvent.reason)
-          // 如果已经有完整结果，正常结束
-          if (fullText && !isResolved) {
-            isResolved = true
-            clearTimeout(timeoutId)
-            resolve(fullText)
-          } else if (!isResolved) {
-            isResolved = true
-            clearTimeout(timeoutId)
-            reject(new Error(`连接已关闭 (${closeEvent.code})，未获取到识别结果`))
-          }
-        }
-      })
+      }
 
       setProgress('识别完成')
-      if (transcript) {
-        console.log('上传录音识别结果:', transcript)
+      if (fullTranscript) {
+        console.log('全部识别结果:', fullTranscript)
+      } else {
+        console.warn('识别结果为空')
       }
     } catch (err: any) {
       console.error('录音识别失败:', err)
       setProgress('识别失败: ' + err.message)
     } finally {
-      // 清理资源
-      if (ws) {
-        try { ws.close() } catch (e) {}
-        ws = null
-      }
-      if (audioContext) {
-        try { audioContext.close() } catch (e) {}
-        audioContext = null
-      }
+      if (audioContext) { try { audioContext.close() } catch {} }
       setIsUploading(false)
       if (inputRef.current) inputRef.current.value = ''
       setTimeout(() => setProgress(''), 3000)
     }
   }
 
-  // 发送音频数据（将AudioBuffer分块发送）
-  async function sendAudioData(
-    ws: WebSocket,
-    audioBuffer: AudioBuffer,
-    isAborted: () => boolean
-  ): Promise<void> {
-    const targetSampleRate = 16000
-    const channelData = audioBuffer.getChannelData(0) // 取第一声道
+  // ---- 工具函数 ----
 
-    // 重采样到16000Hz（如果原始采样率不同）
-    let resampledData: Float32Array
-    if (audioBuffer.sampleRate !== targetSampleRate) {
-      resampledData = resampleAudio(channelData, audioBuffer.sampleRate, targetSampleRate)
-      console.log(`重采样: ${audioBuffer.sampleRate}Hz → ${targetSampleRate}Hz, ${resampledData.length} 样本`)
-    } else {
-      resampledData = channelData
-    }
-
-    // 分块发送，每块约100ms的数据（1600个样本）
-    const chunkSize = 1600
-    const totalChunks = Math.ceil(resampledData.length / chunkSize)
-    console.log(`开始发送音频数据: ${totalChunks} 块, ${resampledData.length} 样本`)
-
-    // 等待StartRecognition确认后再发送音频数据
-    await new Promise<void>((resolve) => {
-      const checkReady = () => {
-        if (ws.readyState === WebSocket.OPEN) {
-          resolve()
-        } else {
-          setTimeout(checkReady, 100)
-        }
-      }
-      checkReady()
-    })
-
-    for (let i = 0; i < totalChunks; i++) {
-      if (isAborted()) {
-        throw new Error('识别已取消')
-      }
-
-      if (ws.readyState !== WebSocket.OPEN) {
-        throw new Error('WebSocket已断开')
-      }
-
-      const start = i * chunkSize
-      const end = Math.min(start + chunkSize, resampledData.length)
-      const chunk = resampledData.slice(start, end)
-
-      // Float32转Int16
-      const int16Data = new Int16Array(chunk.length)
-      for (let j = 0; j < chunk.length; j++) {
-        const s = Math.max(-1, Math.min(1, chunk[j]))
-        int16Data[j] = s < 0 ? s * 0x8000 : s * 0x7FFF
-      }
-
-      ws.send(int16Data.buffer)
-
-      // 控制发送速度：每100ms发送100ms的数据（实时速率）
-      if (i % 10 === 0) {
-        await new Promise(resolve => setTimeout(resolve, 10))
-      }
-
-      // 更新进度
-      if (i % Math.max(1, Math.floor(totalChunks / 50)) === 0) {
-        const pct = Math.round((i / totalChunks) * 100)
-        setProgress(`识别中...${pct}%`)
-      }
-    }
-
-    console.log('音频数据全部发送完成')
-  }
-
-  // 简单的线性重采样
   function resampleAudio(input: Float32Array, inputRate: number, outputRate: number): Float32Array {
     if (inputRate === outputRate) return input
-
     const ratio = inputRate / outputRate
     const outputLength = Math.floor(input.length / ratio)
     const output = new Float32Array(outputLength)
-
     for (let i = 0; i < outputLength; i++) {
       const inputIndex = i * ratio
       const index = Math.floor(inputIndex)
       const fraction = inputIndex - index
-
       if (index + 1 < input.length) {
         output[i] = input[index] * (1 - fraction) + input[index + 1] * fraction
       } else {
         output[i] = input[index]
       }
     }
-
     return output
   }
 
-  // 计算增量文本（和VoiceInput.tsx用同样的算法）
   function getIncrementalText(last: string, current: string): string {
     if (!last) return current
     if (current === last) return ''
-
     let commonLen = 0
     const minLen = Math.min(last.length, current.length)
     for (let i = 1; i <= minLen; i++) {
-      if (last[last.length - i] === current[current.length - i]) {
-        commonLen++
-      } else {
-        break
-      }
+      if (last[last.length - i] === current[current.length - i]) commonLen++
+      else break
     }
-
     if (commonLen >= 2) {
       const lastPrefix = last.slice(0, last.length - commonLen)
       const currentPrefix = current.slice(0, current.length - commonLen)
-      if (currentPrefix.startsWith(lastPrefix)) {
-        return current.slice(lastPrefix.length)
-      }
+      if (currentPrefix.startsWith(lastPrefix)) return current.slice(lastPrefix.length)
       return current.slice(Math.max(0, last.length - commonLen))
     }
-
-    if (current.startsWith(last)) {
-      return current.slice(last.length)
-    }
-
+    if (current.startsWith(last)) return current.slice(last.length)
     return current
   }
 
+  // ---- UI ----
   return (
     <div className="inline-flex items-center gap-2">
       <input
