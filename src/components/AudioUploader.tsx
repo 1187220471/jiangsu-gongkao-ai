@@ -34,6 +34,9 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
     setProgress('正在准备识别...')
     abortRef.current = false
 
+    let ws: WebSocket | null = null
+    let audioContext: AudioContext | null = null
+
     try {
       // 1. 获取阿里云Token
       const tokenRes = await fetch('/api/voice/aliyun-token', {
@@ -48,9 +51,9 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
       setProgress('正在解码音频...')
 
       // 2. 用Web Audio API解码音频文件
-      const arrayBuffer = await file.arrayBuffer()
-      const audioContext = new AudioContext({ sampleRate: 16000 })
-      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
+      const fileBuffer = await file.arrayBuffer()
+      audioContext = new AudioContext()
+      const audioBuffer = await audioContext.decodeAudioData(fileBuffer)
 
       if (abortRef.current) return
 
@@ -58,24 +61,34 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
 
       // 3. 连接阿里云WebSocket
       const wsUrl = `wss://nls-gateway.cn-shanghai.aliyuncs.com/ws/v1?token=${tokenData.token}`
-      const ws = new WebSocket(wsUrl)
+      ws = new WebSocket(wsUrl)
 
+      // 生成32位十六进制ID
+      const generateId = () => {
+        return Array.from({ length: 32 }, () =>
+          Math.floor(Math.random() * 16).toString(16)
+        ).join('')
+      }
+
+      const taskId = generateId()
       let fullText = ''
       let lastText = ''
+      let isResolved = false // 标记是否已返回结果，防止重复resolve/reject
 
-      await new Promise<void>((resolve, reject) => {
-        ws.onopen = () => {
+      // 执行识别，返回完整文字
+      const transcript = await new Promise<string>((resolve, reject) => {
+        // 设置总超时（5分钟）
+        const timeoutId = setTimeout(() => {
+          if (!isResolved) {
+            isResolved = true
+            reject(new Error('识别超时，请重试'))
+          }
+        }, 5 * 60 * 1000)
+
+        ws!.onopen = () => {
           console.log('阿里云WebSocket连接成功')
 
-          // 生成32位十六进制ID
-          const generateId = () => {
-            return Array.from({ length: 32 }, () =>
-              Math.floor(Math.random() * 16).toString(16)
-            ).join('')
-          }
-
           const messageId = generateId()
-          const taskId = generateId()
 
           // 发送开始识别指令
           const startCmd = {
@@ -94,11 +107,13 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
               enable_inverse_text_normalization: true,
             },
           }
-          ws.send(JSON.stringify(startCmd))
+          ws!.send(JSON.stringify(startCmd))
+          console.log('已发送StartRecognition指令')
 
-          // 发送音频数据
-          sendAudioData(ws, audioBuffer, () => abortRef.current)
+          // 开始发送音频数据（不等待，异步发送）
+          sendAudioData(ws!, audioBuffer, () => abortRef.current)
             .then(() => {
+              console.log('音频数据发送完成')
               // 发送停止指令
               const stopCmd = {
                 header: {
@@ -108,18 +123,28 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
                   name: 'StopRecognition',
                 },
               }
-              ws.send(JSON.stringify(stopCmd))
+              ws!.send(JSON.stringify(stopCmd))
+              console.log('已发送StopRecognition指令')
             })
-            .catch(reject)
+            .catch((err) => {
+              if (!isResolved) {
+                isResolved = true
+                clearTimeout(timeoutId)
+                reject(err)
+              }
+            })
         }
 
-        ws.onmessage = (event) => {
+        ws!.onmessage = (event) => {
           const data = JSON.parse(event.data)
+          const name = data.header?.name
+          console.log('阿里云消息:', name, data.header?.status_code || '')
 
-          if (data.header?.name === 'RecognitionResultChanged') {
+          if (name === 'RecognitionStarted') {
+            console.log('识别已开始')
+          } else if (name === 'RecognitionResultChanged') {
             const text = data.payload?.result || ''
             if (text) {
-              // 使用最长公共后缀算法找增量
               const newPart = getIncrementalText(lastText, text)
               lastText = text
               fullText = text
@@ -127,7 +152,7 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
                 onTranscript(newPart)
               }
             }
-          } else if (data.header?.name === 'RecognitionCompleted') {
+          } else if (name === 'RecognitionCompleted') {
             const text = data.payload?.result || ''
             if (text) {
               fullText = text
@@ -137,32 +162,71 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
               }
             }
             console.log('识别完成，最终文本:', fullText)
-            ws.close()
-            resolve()
-          } else if (data.header?.name === 'Error') {
-            reject(new Error(data.payload?.message || data.header?.status_message || '识别错误'))
+            if (!isResolved) {
+              isResolved = true
+              clearTimeout(timeoutId)
+              resolve(fullText)
+            }
+          } else if (name === 'Error') {
+            const errMsg = data.payload?.message || data.header?.status_message || '未知识别错误'
+            console.error('阿里云识别错误:', errMsg)
+            if (!isResolved) {
+              isResolved = true
+              clearTimeout(timeoutId)
+              reject(new Error(errMsg))
+            }
+          } else if (name === 'TaskFailed') {
+            const errMsg = data.payload?.message || '任务失败'
+            console.error('阿里云任务失败:', errMsg)
+            if (!isResolved) {
+              isResolved = true
+              clearTimeout(timeoutId)
+              reject(new Error(errMsg))
+            }
           }
         }
 
-        ws.onerror = (error) => {
-          reject(new Error('WebSocket连接错误'))
+        ws!.onerror = (error) => {
+          console.error('阿里云WebSocket错误:', error)
+          if (!isResolved) {
+            isResolved = true
+            clearTimeout(timeoutId)
+            reject(new Error('WebSocket连接错误'))
+          }
         }
 
-        ws.onclose = () => {
-          if (!fullText) {
-            reject(new Error('连接已关闭，未获取到识别结果'))
-          } else {
-            resolve()
+        ws!.onclose = (closeEvent) => {
+          console.log('阿里云WebSocket关闭:', closeEvent.code, closeEvent.reason)
+          // 如果已经有完整结果，正常结束
+          if (fullText && !isResolved) {
+            isResolved = true
+            clearTimeout(timeoutId)
+            resolve(fullText)
+          } else if (!isResolved) {
+            isResolved = true
+            clearTimeout(timeoutId)
+            reject(new Error(`连接已关闭 (${closeEvent.code})，未获取到识别结果`))
           }
         }
       })
 
-      await audioContext.close()
       setProgress('识别完成')
+      if (transcript) {
+        console.log('上传录音识别结果:', transcript)
+      }
     } catch (err: any) {
       console.error('录音识别失败:', err)
       setProgress('识别失败: ' + err.message)
     } finally {
+      // 清理资源
+      if (ws) {
+        try { ws.close() } catch (e) {}
+        ws = null
+      }
+      if (audioContext) {
+        try { audioContext.close() } catch (e) {}
+        audioContext = null
+      }
       setIsUploading(false)
       if (inputRef.current) inputRef.current.value = ''
       setTimeout(() => setProgress(''), 3000)
@@ -175,13 +239,14 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
     audioBuffer: AudioBuffer,
     isAborted: () => boolean
   ): Promise<void> {
-    const sampleRate = 16000
+    const targetSampleRate = 16000
     const channelData = audioBuffer.getChannelData(0) // 取第一声道
 
     // 重采样到16000Hz（如果原始采样率不同）
     let resampledData: Float32Array
-    if (audioBuffer.sampleRate !== sampleRate) {
-      resampledData = resampleAudio(channelData, audioBuffer.sampleRate, sampleRate)
+    if (audioBuffer.sampleRate !== targetSampleRate) {
+      resampledData = resampleAudio(channelData, audioBuffer.sampleRate, targetSampleRate)
+      console.log(`重采样: ${audioBuffer.sampleRate}Hz → ${targetSampleRate}Hz, ${resampledData.length} 样本`)
     } else {
       resampledData = channelData
     }
@@ -189,10 +254,27 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
     // 分块发送，每块约100ms的数据（1600个样本）
     const chunkSize = 1600
     const totalChunks = Math.ceil(resampledData.length / chunkSize)
+    console.log(`开始发送音频数据: ${totalChunks} 块, ${resampledData.length} 样本`)
+
+    // 等待StartRecognition确认后再发送音频数据
+    await new Promise<void>((resolve) => {
+      const checkReady = () => {
+        if (ws.readyState === WebSocket.OPEN) {
+          resolve()
+        } else {
+          setTimeout(checkReady, 100)
+        }
+      }
+      checkReady()
+    })
 
     for (let i = 0; i < totalChunks; i++) {
       if (isAborted()) {
         throw new Error('识别已取消')
+      }
+
+      if (ws.readyState !== WebSocket.OPEN) {
+        throw new Error('WebSocket已断开')
       }
 
       const start = i * chunkSize
@@ -206,19 +288,21 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
         int16Data[j] = s < 0 ? s * 0x8000 : s * 0x7FFF
       }
 
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(int16Data.buffer)
-      }
+      ws.send(int16Data.buffer)
 
-      // 控制发送速度，模拟实时录音（每100ms发送100ms的数据）
-      await new Promise(resolve => setTimeout(resolve, 50))
+      // 控制发送速度：每100ms发送100ms的数据（实时速率）
+      if (i % 10 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
 
       // 更新进度
-      if (i % 20 === 0) {
-        const progress = Math.round((i / totalChunks) * 100)
-        setProgress(`识别中...${progress}%`)
+      if (i % Math.max(1, Math.floor(totalChunks / 50)) === 0) {
+        const pct = Math.round((i / totalChunks) * 100)
+        setProgress(`识别中...${pct}%`)
       }
     }
+
+    console.log('音频数据全部发送完成')
   }
 
   // 简单的线性重采样
