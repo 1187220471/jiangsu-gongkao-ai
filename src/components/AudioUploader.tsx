@@ -22,6 +22,7 @@ const SEGMENT_SAMPLES = SAMPLE_RATE * SEGMENT_DURATION // 480000 samples
 export default function AudioUploader({ onTranscript, disabled }: AudioUploaderProps) {
   const [isUploading, setIsUploading] = useState(false)
   const [progress, setProgress] = useState('')
+  const [realtimeText, setRealtimeText] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef(false)
 
@@ -35,6 +36,7 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
     segmentIndex: number,
     token: string,
     appKey: string,
+    onRealtime: (text: string) => void,
   ): Promise<string> => {
     return new Promise((resolve, reject) => {
       const wsUrl = `wss://nls-gateway.cn-shanghai.aliyuncs.com/ws/v1?token=${token}`
@@ -80,7 +82,7 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
         const cmdStr = JSON.stringify(startCmd)
         console.log(`[段${segmentIndex + 1}] StartRecognition命令:`, cmdStr)
         ws.send(cmdStr)
-        // ⚠️ 不在这里发送音频数据！
+        // 不在这里发送音频数据！
         // 必须等收到 RecognitionStarted 后才发送（见 onmessage）
       }
 
@@ -91,7 +93,7 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
         try {
           data = JSON.parse(event.data)
         } catch {
-          console.warn(`[段${segmentIndex + 1}] ⚠️ 无法解析:`, event.data)
+          console.warn(`[段${segmentIndex + 1}] 无法解析:`, event.data)
           return
         }
         const name = data.header?.name
@@ -100,7 +102,7 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
         console.log(`[段${segmentIndex + 1}] 类型=${name}, 状态码=${statusCode}, 状态=${statusText}`)
 
         if (name === 'RecognitionStarted') {
-          console.log(`[段${segmentIndex + 1}] ✅ 识别已开始, 开始发送音频数据`)
+          console.log(`[段${segmentIndex + 1}] 识别已开始, 开始发送音频数据`)
           if (!audioStarted) {
             audioStarted = true
             sendSegmentData(ws, pcmData).then(() => {
@@ -122,12 +124,16 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
           const text = data.payload?.result || ''
           if (text) {
             segmentFullText = text
+            const newPart = getIncrementalText(segmentLastText, text)
             segmentLastText = text
+            if (newPart) onRealtime(newPart)
           }
         } else if (name === 'RecognitionCompleted') {
           const text = data.payload?.result || ''
           if (text) {
             segmentFullText = text
+            const correction = getIncrementalText(segmentLastText, text)
+            if (correction) onRealtime(correction)
           }
           clearTimeout(timeoutId)
           ws.close()
@@ -135,22 +141,22 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
         } else if (name === 'TaskFailed' || name === 'Error') {
           const errMsg = data.payload?.message || data.payload?.status_text || data.header?.status_message || ''
           const errCode = data.header?.status_code || ''
-          console.error(`[段${segmentIndex + 1}] ❌ 阿里云错误: 码=${errCode}, 消息=${errMsg}`)
-          console.error(`[段${segmentIndex + 1}] ❌ 完整错误数据:`, JSON.stringify(data, null, 2))
+          console.error(`[段${segmentIndex + 1}] 阿里云错误: 码=${errCode}, 消息=${errMsg}`)
+          console.error(`[段${segmentIndex + 1}] 完整错误数据:`, JSON.stringify(data, null, 2))
           clearTimeout(timeoutId)
           safeReject(new Error(`第${segmentIndex + 1}段: [${errCode}] ${errMsg}`))
         } else {
           // 打印未处理的消息类型
-          console.log(`[段${segmentIndex + 1}] 🔔 未处理消息:`, JSON.stringify(data, null, 2))
+          console.log(`[段${segmentIndex + 1}] 未处理消息:`, JSON.stringify(data, null, 2))
         }
       }
 
       ws.onerror = (error) => {
-        console.error(`[段${segmentIndex + 1}] 🔌 WebSocket error事件:`, error)
+        console.error(`[段${segmentIndex + 1}] WebSocket error事件:`, error)
         safeReject(new Error(`第${segmentIndex + 1}段WebSocket连接错误`))
       }
       ws.onclose = (closeEvent) => {
-        console.log(`[段${segmentIndex + 1}] 🔒 WebSocket关闭: 码=${closeEvent.code}, 原因="${closeEvent.reason}", 已识别文本="${segmentFullText}"`)
+        console.log(`[段${segmentIndex + 1}] WebSocket关闭: 码=${closeEvent.code}, 原因="${closeEvent.reason}", 已识别文本="${segmentFullText}"`)
         clearTimeout(timeoutId)
         if (!isDone) safeResolve(segmentFullText)
       }
@@ -178,7 +184,7 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
 
       ws.send(int16Data.buffer)
 
-      // 每块等待 CHUNK_INTERVAL ms（2x实时速率，提速不超限）
+      // 每块等待 CHUNK_INTERVAL ms（1x实时速率）
       await new Promise(r => setTimeout(r, CHUNK_INTERVAL))
     }
   }
@@ -196,6 +202,7 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
 
     setIsUploading(true)
     setProgress('正在准备识别...')
+    setRealtimeText('')
     abortRef.current = false
 
     let audioContext: AudioContext | null = null
@@ -237,7 +244,8 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
         const segEnd = Math.min(segStart + SEGMENT_SAMPLES, pcmData.length)
         const segmentPcm = pcmData.slice(segStart, segEnd)
 
-        setProgress(`识别中...第 ${segIdx + 1}/${totalSegments} 段`)
+        setProgress(`识别中...第 ${segIdx + 1}/${totalSegments} 段，正在识别，请耐心等待`)
+        setRealtimeText('') // 清空上一段的实时文字
 
         // 每段获取新的Token（阿里云Token可能单次使用）
         let segToken: string
@@ -255,11 +263,20 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
 
         console.log(`开始识别第 ${segIdx + 1}/${totalSegments} 段 (${segIdx * SEGMENT_DURATION}s - ${Math.min((segIdx + 1) * SEGMENT_DURATION, totalSeconds)}s)`)
 
-        const segmentText = await recognizeSegment(segmentPcm, segIdx, segToken, segAppKey)
+        const segmentText = await recognizeSegment(
+          segmentPcm,
+          segIdx,
+          segToken,
+          segAppKey,
+          (newPart: string) => {
+            // 实时更新当前段的临时文字
+            setRealtimeText(prev => prev + newPart)
+          },
+        )
 
         if (segmentText) {
           fullTranscript += segmentText
-          onTranscript(segmentText) // 每段完成后统一输出
+          onTranscript(segmentText) // 段完成后正式写入答案框
           console.log(`第${segIdx + 1}段识别结果: "${segmentText}"`)
         }
 
@@ -270,6 +287,7 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
       }
 
       setProgress('识别完成')
+      setRealtimeText('')
       if (fullTranscript) {
         console.log('全部识别结果:', fullTranscript)
       } else {
@@ -281,6 +299,7 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
     } finally {
       if (audioContext) { try { audioContext.close() } catch {} }
       setIsUploading(false)
+      setRealtimeText('')
       if (inputRef.current) inputRef.current.value = ''
       setTimeout(() => setProgress(''), 3000)
     }
@@ -327,41 +346,49 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
 
   // ---- UI ----
   return (
-    <div className="inline-flex items-center gap-2">
-      <input
-        ref={inputRef}
-        type="file"
-        accept="audio/mp3,audio/wav,audio/m4a,audio/ogg,audio/*"
-        onChange={handleFileSelect}
-        disabled={disabled || isUploading}
-        className="hidden"
-        id="audio-upload"
-      />
-      <label
-        htmlFor="audio-upload"
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
-          disabled || isUploading
-            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-            : 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
-        }`}
-      >
-        {isUploading ? (
-          <>
-            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-            {progress}
-          </>
-        ) : (
-          <>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-            </svg>
-            上传录音
-          </>
-        )}
-      </label>
+    <div className="inline-flex flex-col items-start gap-1">
+      <div className="inline-flex items-center gap-2">
+        <input
+          ref={inputRef}
+          type="file"
+          accept="audio/mp3,audio/wav,audio/m4a,audio/ogg,audio/*"
+          onChange={handleFileSelect}
+          disabled={disabled || isUploading}
+          className="hidden"
+          id="audio-upload"
+        />
+        <label
+          htmlFor="audio-upload"
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+            disabled || isUploading
+              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              : 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
+          }`}
+        >
+          {isUploading ? (
+            <>
+              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              {progress}
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              上传录音
+            </>
+          )}
+        </label>
+      </div>
+      {isUploading && realtimeText && (
+        <div className="max-w-md text-xs text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-200">
+          <span className="text-blue-600 font-medium">实时预览：</span>
+          {realtimeText}
+        </div>
+      )}
     </div>
   )
 }
