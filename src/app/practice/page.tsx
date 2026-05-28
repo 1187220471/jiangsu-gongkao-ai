@@ -175,6 +175,11 @@ export default function Practice() {
       const data = await res.json()
       if (data.questions) {
         localStorage.setItem('setTrainingData', JSON.stringify(data))
+        // 清除该模式下之前保存的答案，避免新套题显示旧答案
+        localStorage.removeItem(`setAnswers_${mode}`)
+        localStorage.removeItem(`setUserAnswers_${mode}`)
+        localStorage.removeItem(`setRefAnswers_${mode}`)
+        localStorage.removeItem(`setEvaluations_${mode}`)
         router.push(`/practice/set/${mode}`)
       } else {
         alert(data.error || '生成套题失败')
