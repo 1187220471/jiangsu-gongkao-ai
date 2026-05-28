@@ -122,16 +122,12 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
           const text = data.payload?.result || ''
           if (text) {
             segmentFullText = text
-            const newPart = getIncrementalText(segmentLastText, text)
             segmentLastText = text
-            if (newPart) onTranscript(newPart)
           }
         } else if (name === 'RecognitionCompleted') {
           const text = data.payload?.result || ''
           if (text) {
             segmentFullText = text
-            const correction = getIncrementalText(segmentLastText, text)
-            if (correction) onTranscript(correction)
           }
           clearTimeout(timeoutId)
           ws.close()
@@ -262,7 +258,8 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
         const segmentText = await recognizeSegment(segmentPcm, segIdx, segToken, segAppKey)
 
         if (segmentText) {
-          fullTranscript += (fullTranscript && segmentText ? '' : '') + segmentText
+          fullTranscript += segmentText
+          onTranscript(segmentText) // 每段完成后统一输出
           console.log(`第${segIdx + 1}段识别结果: "${segmentText}"`)
         }
 
