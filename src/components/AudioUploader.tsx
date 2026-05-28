@@ -57,7 +57,10 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
         safeReject(new Error(`第${segmentIndex + 1}段识别超时`))
       }, 90 * 1000)
 
+      let audioStarted = false // 标记是否已开始发送音频数据
+
       ws.onopen = () => {
+        console.log(`[段${segmentIndex + 1}] WebSocket已连接，发送StartRecognition`)
         const startCmd = {
           header: {
             message_id: generateId(),
@@ -75,19 +78,8 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
           },
         }
         ws.send(JSON.stringify(startCmd))
-
-        // 立即开始发送音频数据（无需等待RecognitionStarted）
-        sendSegmentData(ws, pcmData).then(() => {
-          // 发送停止指令
-          ws.send(JSON.stringify({
-            header: {
-              message_id: generateId(),
-              task_id: taskId,
-              namespace: 'SpeechRecognizer',
-              name: 'StopRecognition',
-            },
-          }))
-        }).catch(safeReject)
+        // ⚠️ 不在这里发送音频数据！
+        // 必须等收到 RecognitionStarted 后才发送（见 onmessage）
       }
 
       ws.onmessage = (event) => {
@@ -106,7 +98,23 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
         console.log(`[段${segmentIndex + 1}] 类型=${name}, 状态码=${statusCode}, 状态=${statusText}`)
 
         if (name === 'RecognitionStarted') {
-          console.log(`[段${segmentIndex + 1}] ✅ 识别已开始`)
+          console.log(`[段${segmentIndex + 1}] ✅ 识别已开始, 开始发送音频数据`)
+          if (!audioStarted) {
+            audioStarted = true
+            sendSegmentData(ws, pcmData).then(() => {
+              console.log(`[段${segmentIndex + 1}] 音频数据发送完成，发送StopRecognition`)
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  header: {
+                    message_id: generateId(),
+                    task_id: taskId,
+                    namespace: 'SpeechRecognizer',
+                    name: 'StopRecognition',
+                  },
+                }))
+              }
+            }).catch(safeReject)
+          }
         } else if (name === 'RecognitionResultChanged') {
           const text = data.payload?.result || ''
           if (text) {
