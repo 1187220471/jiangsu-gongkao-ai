@@ -54,6 +54,7 @@ export async function POST(request: Request) {
         referenceAnswer: finalReferenceAnswer,
         userAnswer,
         evaluation: result.evaluation,
+        improvedAnswer: result.improvedAnswer,
         score: result.score,
       },
     })

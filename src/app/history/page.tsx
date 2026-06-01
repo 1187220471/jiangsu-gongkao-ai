@@ -11,6 +11,7 @@ interface Record {
   referenceAnswer: string | null
   userAnswer: string | null
   evaluation: string | null
+  improvedAnswer: string | null
   score: number | null
   createdAt: string
 }
@@ -178,6 +179,17 @@ export default function History() {
                         </h4>
                         <div className="bg-primary-50 rounded-lg p-3 text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">
                           {record.evaluation}
+                        </div>
+                      </div>
+                    )}
+
+                    {record.improvedAnswer && (
+                      <div>
+                        <h4 className="text-sm font-bold text-blue-700 mb-2">
+                          改进版答案
+                        </h4>
+                        <div className="bg-blue-50 rounded-lg p-3 text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">
+                          {record.improvedAnswer}
                         </div>
                       </div>
                     )}

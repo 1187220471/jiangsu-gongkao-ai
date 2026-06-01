@@ -8,49 +8,43 @@ datasource db {
 }
 
 model User {
-  id              String   @id @default(uuid())
-  username        String   @unique
-  password        String
-  nickname        String?
-
-  // 额度系统
-  dailyFreeCount    Int      @default(5)       // 每日剩余免费次数
-  freeCountResetAt  DateTime @default(now())   // 免费次数重置时间
-  coins             Int      @default(0)        // 练习币余额
-  accessLevel       String   @default("none")   // none / month / year（邀请制权限）
-  accessExpire      DateTime?                   // 邀请权限过期时间
-
-  // 去重缓存：最近使用过的出题主题
-  recentTopics      String[] @default([])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  records Record[]
+  id               String    @id @default(uuid())
+  username         String    @unique
+  password         String
+  nickname         String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  coins            Int       @default(0)
+  dailyFreeCount   Int       @default(5)
+  freeCountResetAt DateTime  @default(now())
+  accessExpire     DateTime?
+  accessLevel      String    @default("none")
+  recentTopics     String[]  @default([])
+  records          Record[]
 }
 
 model Record {
-  id            String   @id @default(uuid())
-  userId        String
-  questionType  String
-  question      String
+  id              String   @id @default(uuid())
+  userId          String
+  questionType    String
+  question        String
   referenceAnswer String?
-  userAnswer    String?
-  evaluation    String?
-  score         Int?
-  createdAt     DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAnswer      String?
+  evaluation      String?
+  improvedAnswer  String?
+  score           Int?
+  createdAt       DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model InvitationCode {
-  id        String   @id @default(uuid())
-  code      String   @unique
-  type      String   @default("month")
-  used      Boolean  @default(false)
+  id        String    @id @default(uuid())
+  code      String    @unique
+  type      String    @default("month")
+  used      Boolean   @default(false)
   usedBy    String?
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 }
 
 model Feedback {
@@ -64,9 +58,9 @@ model Feedback {
 
 model DailyNews {
   id        Int      @id @default(autoincrement())
-  date      String   @unique // 格式: 2026-05-22
-  topNews   String   // JSON字符串: [{title, date, source, score, intro, topic, url}]
-  allNews   String?  // JSON字符串: 全部评分结果（可选）
+  date      String   @unique
+  topNews   String
+  allNews   String?
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("daily_news")
