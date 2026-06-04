@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { PrismaClient } from '@prisma/client'
+import { jsonrepair } from 'jsonrepair'
 
 // 强制动态渲染，防止边缘缓存导致日期错误
 export const dynamic = 'force-dynamic'
@@ -178,7 +179,23 @@ async function fetchSite(site: typeof SITES[0]) {
 
 // ============ AI 过滤 ============
 
+function sanitizeForJSON(text: string): string {
+  // 移除或转义可能破坏JSON格式的特殊字符
+  return text
+    .replace(/\\/g, '\\')   // 转义反斜杠
+    .replace(/"/g, '\\"')   // 转义双引号
+    .replace(/\n/g, ' ')     // 换行符转空格
+    .replace(/\r/g, ' ')     // 回车符转空格
+    .replace(/\t/g, ' ')     // 制表符转空格
+}
+
 async function aiFilter(newsItems: any[], apiKey: string) {
+  // 清理新闻标题，防止特殊字符破坏prompt中的JSON结构
+  const cleanedItems = newsItems.map(n => ({
+    ...n,
+    title: sanitizeForJSON(n.title),
+  }))
+
   const prompt = `你是一位资深公考备考资料编辑，负责从以下江苏地区新闻中筛选出对公务员申论写作和结构化面试最有参考价值的新闻，并精选出今日最重要的消息。
 
 筛选标准：
@@ -202,7 +219,7 @@ async function aiFilter(newsItems: any[], apiKey: string) {
 
 ## 输出格式（严格返回JSON，不要markdown）
 
-返回以下JSON格式（不要加markdown代码块标记）：
+返回以下JSON格式（不要加markdown代码块标记，确保JSON完整不截断）：
 {
   "allNews": [
     {
@@ -230,9 +247,10 @@ async function aiFilter(newsItems: any[], apiKey: string) {
 1. allNews 包含所有评分≥6分的初筛新闻，按分数从高到低排序
 2. topNews 从 allNews 中精选8-12条，每条必须附带100-150字简介
 3. 两个列表的新闻不要重复计算，topNews是allNews的子集
+4. 必须返回完整、合法的JSON，不要截断，确保最后一个括号闭合
 
-新闻列表（共${newsItems.length}条）：
-${newsItems.map((n, i) => `${i + 1}. [${n.date}] [${n.source}] ${n.title} | ${n.url}`).join('\n')}`
+新闻列表（共${cleanedItems.length}条）：
+${cleanedItems.map((n, i) => `${i + 1}. [${n.date}] [${n.source}] ${n.title} | ${n.url}`).join('\n')}`
 
   const response = await fetch('https://api.deepseek.com/chat/completions', {
     method: 'POST',
@@ -244,7 +262,7 @@ ${newsItems.map((n, i) => `${i + 1}. [${n.date}] [${n.source}] ${n.title} | ${n.
       model: 'deepseek-chat',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
-      max_tokens: 6000,
+      max_tokens: 8000,
     }),
   })
 
@@ -262,14 +280,34 @@ ${newsItems.map((n, i) => `${i + 1}. [${n.date}] [${n.source}] ${n.title} | ${n.
     jsonStr = codeBlockMatch[1].trim()
   }
 
+  // 尝试多种方式解析JSON
   try {
     return JSON.parse(jsonStr)
   } catch (e) {
-    // 尝试从文本中提取JSON
+    console.log('首次JSON解析失败，尝试修复:', e instanceof Error ? e.message : String(e))
+    
+    // 尝试使用jsonrepair修复
+    try {
+      const repaired = jsonrepair(jsonStr)
+      const result = JSON.parse(repaired)
+      console.log('✅ jsonrepair修复成功')
+      return result
+    } catch (repairErr) {
+      console.log('jsonrepair修复失败:', repairErr instanceof Error ? repairErr.message : String(repairErr))
+    }
+    
+    // 尝试从文本中提取最外层JSON对象
     const jsonMatch = content.match(/\{[\s\S]*\}/)
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0])
+      try {
+        const extracted = jsonMatch[0]
+        const repaired = jsonrepair(extracted)
+        return JSON.parse(repaired)
+      } catch (extractErr) {
+        console.log('提取后修复失败:', extractErr instanceof Error ? extractErr.message : String(extractErr))
+      }
     }
+    
     throw new Error('无法解析AI返回的JSON')
   }
 }

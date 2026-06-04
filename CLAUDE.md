@@ -4,7 +4,7 @@
 Next.js 14 + React 18 + TypeScript + Tailwind + Prisma + Neon PostgreSQL（生产）/ SQLite（本地dev）+ DeepSeek API + 阿里云语音识别
 
 ## 核心功能
-AI出题(7题型)→AI参考答案→AI批改(六维度)→自定义题目→套题训练(邀请用户)→用户系统
+AI出题(8题型)→AI参考答案→AI批改(六维度+改进版答案)→自定义题目(答题+批改)→套题训练(邀请用户)→用户系统+练习记录
 
 ### 额度（src/lib/quota.ts）
 - 免费：每日5次（出题不扣，答案/批改扣）
@@ -15,6 +15,7 @@ AI出题(7题型)→AI参考答案→AI批改(六维度)→自定义题目→套
 - 备用：Vercel Cron 每天11:00 UTC（防重复机制）
 - 信源：江苏省政府网等6站，评分：相关度40%+政策25%+时效20%+密度15%
 - 前端：`/daily-news`
+- ⚠️ API路由必须 `export const dynamic = 'force-dynamic'`（防边缘缓存导致日期错误）
 
 ### 语音答题（阿里云方案）
 - 服务端Token(`@alicloud/pop-core`) + 前端WebSocket
