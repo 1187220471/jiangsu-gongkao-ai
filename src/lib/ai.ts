@@ -274,17 +274,78 @@ const QUESTION_TOPICS: Record<string, string[]> = {
   ],
 }
 
-function getRandomTopics(type: string, count: number, excludeTopics: string[] = []): string[] {
-  const topics = QUESTION_TOPICS[type] || QUESTION_TOPICS['social']
-  // 过滤掉最近使用过的主题
-  const filtered = topics.filter(t => !excludeTopics.includes(t))
-  // 如果过滤后主题太少，说明该题型主题池较浅，允许重复使用
-  const candidatePool = filtered.length >= count ? filtered : topics
-  const shuffled = [...candidatePool].sort(() => Math.random() - 0.5)
-  return shuffled.slice(0, count)
+// ========== 主题领域分类（15个领域，均衡出题） ==========
+// 每个领域的核心关键词，用于自动分类和领域级去重
+// 来源：2026年江苏省政府工作报告 · 十五五规划纲要 · 近年省考高频
+const TOPIC_DOMAIN_KEYWORDS: Record<string, string[]> = {
+  '经济产业':   ['经济产业','新质生产力','产业','制造业','消费','民营经济','平台经济','首发经济','招商引资','总部经济','现代服务业','银发经济','先进制造','产业集群','传统产业'],
+  '科技创新':   ['科技','人工智能','AI','创新','实验室','未来产业','脑机','量子','氢能','生物制造','具身智能','智能工厂','概念验证','中试平台','灯塔工厂'],
+  '数字经济':   ['数字经济','数据','数字化','算力','电商','网络','信息','数字','6G','物联网','软件和信息'],
+  '改革开放':   ['改革开放','改革','开放','营商','统一大市场','要素市场','自贸','CPTPP','制度型开放','免申即享'],
+  '区域协调':   ['区域','长三角','城市群','县域','一体化','城镇化','南北共建','功能区','1+3','扬子江','跨江','向海'],
+  '民生保障':   ['民生','养老','住房','托育','育儿','一老一小','全龄友好','房票','保障房','扩中提低','休','心理','12356'],
+  '教育人才':   ['教育','人才','产教融合','卓越工程师','科技商学院','高校','双高协同','科教','培训','终身学习'],
+  '就业创业':   ['就业','技能','创业','岗位','稳岗','职业培训','新职业'],
+  '生态文明':   ['生态','环境','绿色','低碳','碳','长江','太湖','美丽','零碳','可再生','湿地','排放','大保护'],
+  '文化发展':   ['文化','文旅','旅游','运河','文艺','非遗','文明','茉莉花','水韵','国家文化公园','文化产业'],
+  '社会治理':   ['治理','基层','社区','网格','枫桥','矛盾','信访','12345','苏服办','接诉即办','智慧治理'],
+  '安全生产':   ['安全','应急','消防','防灾','隐患','事故','生命线','本质安全','抢险','排查','管涌'],
+  '法治建设':   ['法治','执法','诚信','信用','依法','公正','政府建设','合法','合规'],
+  '乡村振兴':   ['乡村','三农','农村','振兴','千万工程','和美','新农人','农业','田园','惠农'],
+  '干部队伍':   ['干部','政绩','廉洁','担当','作风','为民','四敢','钉钉子','青年干部','宗旨','亲清'],
 }
 
-export async function generateQuestion(type: string, excludeTopics: string[] = []): Promise<{ question: string; topic: string }> {
+/**
+ * 根据主题字符串自动归类到对应的领域
+ * 算法：计算每个领域的命中关键词数，选最多的；平局取第一个
+ */
+function getTopicDomain(topic: string): string {
+  let bestDomain = '经济产业' // fallback
+  let bestScore = 0
+  for (const [domain, keywords] of Object.entries(TOPIC_DOMAIN_KEYWORDS)) {
+    let score = 0
+    for (const kw of keywords) {
+      if (topic.includes(kw)) score++
+    }
+    if (score > bestScore) {
+      bestScore = score
+      bestDomain = domain
+    }
+  }
+  return bestDomain
+}
+
+/**
+ * 从主题池中选取一个主题（代码确定性随机，不再交给AI选）
+ * 
+ * 策略：
+ * 1. 排除最近使用过的主题（exact match）
+ * 2. 排除已占用的领域（可选，用于套题内领域不重复）
+ * 3. 如果严格过滤后无可用主题，逐步放宽：先放领域 → 再放主题
+ */
+function getRandomTopic(type: string, excludeTopics: string[] = [], excludeDomains: string[] = []): string {
+  const topics = QUESTION_TOPICS[type] || QUESTION_TOPICS['social']
+  
+  // 第一轮：严格过滤（排除主题 + 排除领域）
+  let filtered = topics.filter(t => !excludeTopics.includes(t))
+  
+  if (excludeDomains.length > 0) {
+    const domainFiltered = filtered.filter(t => !excludeDomains.includes(getTopicDomain(t)))
+    // 如果领域过滤后还有至少2个候选，则使用领域过滤；否则保留全量以避免枯竭
+    if (domainFiltered.length >= 2) {
+      filtered = domainFiltered
+    }
+  }
+  
+  // 如果严格过滤后为空，回退全量池
+  const candidatePool = filtered.length > 0 ? filtered : topics
+  
+  // 代码端确定性随机
+  const idx = Math.floor(Math.random() * candidatePool.length)
+  return candidatePool[idx]
+}
+
+export async function generateQuestion(type: string, excludeTopics: string[] = [], excludeDomains: string[] = []): Promise<{ question: string; topic: string; domain: string }> {
   const typeMap: Record<string, string> = {
     'social': '社会现象类',
     'attitude': '态度观点类',
@@ -296,32 +357,25 @@ export async function generateQuestion(type: string, excludeTopics: string[] = [
   }
 
   const typeName = typeMap[type] || '社会现象类'
-  const selectedTopics = getRandomTopics(type, 5, excludeTopics)
+  
+  // 【核心改进】由代码确定性地选择一个主题，不再给AI 5个候选让它"随机"选
+  const selectedTopic = getRandomTopic(type, excludeTopics, excludeDomains)
 
   const systemPrompt = `你是一位资深江苏省公务员面试命题专家，精通江苏省考面试的命题风格和特点。你需要生成一道高质量的江苏省公务员结构化面试题。
 
 【题型】${typeName}
 
-【可选主题领域】（请从以下领域中随机选择1个来出题，不要集中在某一领域）：
-${selectedTopics.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+【指定主题】请围绕以下主题出题（不要偏离）：
+${selectedTopic}
 
 【必须遵守的规则】
-1. 请从上述【可选主题领域】中选择1个领域出题
-2. 在题目开头用【主题】标记你选择的主题领域，格式为：【主题】你选择的主题名称
+1. 严格按照上述【指定主题】出题，不要自行更换主题
+2. 在题目开头用【主题】标记主题名称，格式为：【主题】${selectedTopic}
 3. 标记后空一行，再输出正式题目内容
 
 【出题要求】
 1. 题目必须紧密结合江苏省情、基层治理实际或社会热点，优先2025-2026年真实热点
-2. 优先使用以下政策热点词汇和概念（根据主题自然融入，不要堆砌）：
-   - 经济产业：新质生产力、1650产业体系、智改数转网联、低空经济、未来产业（具身智能/量子科技/脑机接口）、首发经济、银发经济、数字经济、先进制造业集群
-   - 科技创新：产业科技创新中心、苏州实验室/紫金山实验室、双高协同、概念验证中心、中试平台、教育科技人才一体发展、人工智能+、智能工厂
-   - 改革开放：全国统一大市场、高效办成一件事、制度型开放、自贸试验区提升、综合查一次、营商环境优化、基础设施REITs
-   - 区域协调：长三角一体化、1+3重点功能区、扬子江城市群、南北共建园区、新型城镇化、县域经济
-   - 民生保障：一老一小、普惠托育、育儿补贴、长期护理保险、房票安置、收购存量商品房作保障房、扩中提低、全龄友好型社会、春秋假、12356心理援助热线
-   - 生态文明：长江大保护、太湖综合治理、碳排放双控、零碳园区/工厂、可再生能源、美丽江苏
-   - 文化发展：文旅深度融合、水韵江苏、大运河/长江国家文化公园、数字文化产业、茉莉花开文艺直通车
-   - 社会治理：苏服办、城市智能中枢、新时代枫桥经验、一件事全链条治理、基层智慧治理、12345接诉即办
-   - 安全发展：安全生产治本攻坚、城市基础设施生命线安全工程、本质安全、统筹发展和安全
+2. 根据所选主题，自然融入相关的政策术语和概念（紧扣主题，不要堆砌不相关词汇）
 3. 题目可结合江苏省13个地级市的地方特色来设定场景（根据主题自然选用，不强求）：
    - 南京：软件和信息服务业万亿级、6G之城、紫金山实验室、场景开放之城、地铁运营524公里
    - 苏州：苏州工业园区、3个万亿级产业、苏州智造、OPC创业、古城保护更新
@@ -337,39 +391,43 @@ ${selectedTopics.map((t, i) => `${i + 1}. ${t}`).join('\n')}
    - 泰州：大健康产业、生物医药/海工船舶、梅兰芳文化、早茶文化、三个不相信
    - 宿迁：电商名城、中国酒都、四化同步集成改革、膜材料/激光、数智新城
 4. 背景信息要丰富具体：包含具体的场景、单位、人物角色、时间背景，必要时引用真实数据（如江苏GDP14.2万亿、人均16.7万、制造业占比33.5%，或引用上述各地市特色产业数据）
-4. 题干中必须嵌入可直接转化为答题要点的信息：
+5. 题干中必须嵌入可直接转化为答题要点的信息：
    - 包含多方主体（如政府部门、企业、群众、媒体等）的不同态度或行为
    - 包含问题的具体表现、产生原因的部分线索
    - 包含相关政策背景或制度约束条件
    - 包含具体的数据、比例、时间、地点等细节
    - 这些丰富信息让考生在阅读题干时就能提炼出答题方向
-5. 题目表述要符合江苏省考真题风格：背景完整、逻辑清晰、问法明确
-6. 社会现象类要体现"某地推行了某政策/出现了某现象，你怎么看"的格式，题干中需包含现象产生的背景、涉及的主体、已采取的措施、存在的争议等
-7. 组织管理类要体现"领导让你负责某工作，你会怎么开展"的格式，题干中需包含工作目标、时间要求、资源条件、参与人员、限制因素等
-8. 应急应变类要体现"突发某情况，你会怎么办"的格式，题干中需包含现场状况、涉及人员、紧急程度、已有反应、潜在风险等
-9. 人际关系类要体现"你与某人有矛盾/分歧，你怎么办"的格式，题干中需包含矛盾起因、双方立场、工作影响、过往沟通情况等
-10. 态度观点类要体现对某名言/政策/观点的理解和看法，题干中需包含观点出处、现实背景、社会反响、相关案例等
-11. 自我认知类要结合报考岗位和个人经历，题干中需包含岗位要求、个人背景、具体事件等
-12. 情景模拟类要体现"假如你是xxx，面对这一情形，你会说些什么？请现场模拟"的格式，题干中需包含具体身份设定、沟通对象、问题情境、各方诉求等，让考生有明确的模拟对象和场景
-13. 避免编造不存在的政策名称，使用通用表述或真实政策（如确实需要可用"某市""某地"代替）
-14. 只输出【主题】标记和题目内容，不要输出任何分析、题型说明、提示文字
-15. 题目字数控制在200-250字之间，题干信息精炼但关键要素齐全`
+6. 题目表述要符合江苏省考真题风格：背景完整、逻辑清晰、问法明确
+7. 社会现象类要体现"某地推行了某政策/出现了某现象，你怎么看"的格式，题干中需包含现象产生的背景、涉及的主体、已采取的措施、存在的争议等
+8. 组织管理类要体现"领导让你负责某工作，你会怎么开展"的格式，题干中需包含工作目标、时间要求、资源条件、参与人员、限制因素等
+9. 应急应变类要体现"突发某情况，你会怎么办"的格式，题干中需包含现场状况、涉及人员、紧急程度、已有反应、潜在风险等
+10. 人际关系类要体现"你与某人有矛盾/分歧，你怎么办"的格式，题干中需包含矛盾起因、双方立场、工作影响、过往沟通情况等
+11. 态度观点类要体现对某名言/政策/观点的理解和看法，题干中需包含观点出处、现实背景、社会反响、相关案例等
+12. 自我认知类要结合报考岗位和个人经历，题干中需包含岗位要求、个人背景、具体事件等
+13. 情景模拟类要体现"假如你是xxx，面对这一情形，你会说些什么？请现场模拟"的格式，题干中需包含具体身份设定、沟通对象、问题情境、各方诉求等，让考生有明确的模拟对象和场景
+14. 避免编造不存在的政策名称，使用通用表述或真实政策（如确实需要可用"某市""某地"代替）
+15. 只输出【主题】标记和题目内容，不要输出任何分析、题型说明、提示文字
+16. 题目字数控制在200-250字之间，题干信息精炼但关键要素齐全`
 
-  const userPrompt = `请从【可选主题领域】中随机选择1个领域，生成一道${typeName}的江苏省公务员面试题。要求主题新颖、背景具体、贴合江苏省考风格。`
+  const userPrompt = `请围绕主题"${selectedTopic}"，生成一道${typeName}的江苏省公务员面试题。要求紧扣主题、背景具体、贴合江苏省考风格。`
 
   const rawResponse = await callAI([
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userPrompt },
-  ], 0.9)  // 提高temperature增加多样性
+  ], 0.9)  // temperature保持0.9以保证题目表述风格的多样性
 
   // 解析AI返回的主题标记和题目内容
+  // 因为现在由代码指定主题，如果AI返回的【主题】格式不对，使用我们选定的主题
   const topicMatch = rawResponse.match(/【主题】(.+?)(?:\n|\r)/)
-  const topic = topicMatch ? topicMatch[1].trim() : selectedTopics[0]
+  const topic = topicMatch ? topicMatch[1].trim() : selectedTopic
 
   // 去掉主题标记，保留纯题目内容
   const question = rawResponse.replace(/【主题】.+?(?:\n|\r)/, '').trim()
 
-  return { question, topic }
+  // 计算主题所属领域（用于套题内领域去重）
+  const domain = getTopicDomain(selectedTopic)
+
+  return { question, topic, domain }
 }
 
 export async function generateReferenceAnswer(question: string): Promise<string> {

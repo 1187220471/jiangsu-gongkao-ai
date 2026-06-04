@@ -74,19 +74,21 @@ export async function POST(request: Request) {
 
     const recentTopics: string[] = user?.recentTopics ?? []
 
-    // 按概率生成每道题
+    // 按概率生成每道题（领域去重：套题内不重复领域）
     const questions = []
     const usedTopics = [...recentTopics]
+    const usedDomains: string[] = []
 
     for (let i = 0; i < config.questions.length; i++) {
       const qConfig = config.questions[i]
       const type = weightedRandomChoice(qConfig.types, qConfig.weights)
 
-      // 生成题目
-      const result = await generateQuestion(type, usedTopics)
+      // 生成题目（传入已用主题 + 已用领域，双重去重）
+      const result = await generateQuestion(type, usedTopics, usedDomains)
 
-      // 记录已使用的主题
+      // 记录已使用的主题和领域
       usedTopics.push(result.topic)
+      usedDomains.push(result.domain)
 
       questions.push({
         index: i + 1,
@@ -94,11 +96,12 @@ export async function POST(request: Request) {
         typeName: getTypeName(type),
         question: result.question,
         topic: result.topic,
+        domain: result.domain,
       })
     }
 
-    // 更新去重缓存（只保留最近10个主题）
-    const updatedTopics = usedTopics.slice(-10)
+    // 更新去重缓存（只保留最近25个主题，原为10）
+    const updatedTopics = usedTopics.slice(-25)
     await prisma.user.update({
       where: { id: auth.userId },
       data: { recentTopics: updatedTopics },
