@@ -65,3 +65,14 @@ model DailyNews {
 
   @@map("daily_news")
 }
+
+model CronExecutionLog {
+  id        String   @id @default(uuid())
+  jobName   String
+  status    String
+  message   String?
+  detail    String?
+  createdAt DateTime @default(now())
+
+  @@index([jobName, createdAt])
+}

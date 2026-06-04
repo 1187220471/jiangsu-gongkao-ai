@@ -315,17 +315,23 @@ ${cleanedItems.map((n, i) => `${i + 1}. [${n.date}] [${n.source}] ${n.title} | $
 // ============ Cron 入口 ============
 
 export async function GET(request: NextRequest) {
-  try {
-    // Vercel Cron 会携带 Authorization header，可以简单校验（可选）
-    // 也可以在 vercel.json 中配置 cron secret
+  const startTime = Date.now()
+  let logStatus = 'success'
+  let logMessage = ''
+  let logDetail = ''
 
+  try {
     const apiKey = process.env.DEEPSEEK_API_KEY || process.env.DASHSCOPE_API_KEY
     if (!apiKey) {
+      logStatus = 'failed'
+      logMessage = 'AI API Key not configured'
+      await prisma.cronExecutionLog.create({
+        data: { jobName: 'fetch-news', status: logStatus, message: logMessage },
+      })
       return NextResponse.json({ error: 'AI API Key not configured' }, { status: 500 })
     }
 
-    // 检查今天是否已经有数据，防止重复执行（Vercel Cron 漂移或本地构建触发）
-    // 使用北京时间（UTC+8）
+    // 检查今天是否已经有数据
     const now = new Date()
     const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000)
     const today = beijingTime.toISOString().split('T')[0]
@@ -333,7 +339,11 @@ export async function GET(request: NextRequest) {
       where: { date: today },
     })
     if (existing) {
-      console.log(`[${new Date().toISOString()}] 今日新闻已存在 (${today})，跳过重复执行`)
+      logStatus = 'skipped'
+      logMessage = `今日新闻已存在 (${today})，跳过重复执行`
+      await prisma.cronExecutionLog.create({
+        data: { jobName: 'fetch-news', status: logStatus, message: logMessage },
+      })
       return NextResponse.json({
         success: true,
         date: today,
@@ -347,9 +357,11 @@ export async function GET(request: NextRequest) {
     // 1. 抓取所有网站
     const results = await Promise.all(SITES.map(fetchSite))
     let rawNews: any[] = []
+    const siteErrors: string[] = []
     for (const r of results) {
       if (r.error) {
         console.log(`❌ ${r.site}: ${r.error}`)
+        siteErrors.push(`${r.site}: ${r.error}`)
       } else {
         console.log(`✅ ${r.site}: ${r.count} 条`)
         rawNews = rawNews.concat(r.results)
@@ -368,6 +380,12 @@ export async function GET(request: NextRequest) {
     console.log(`📊 原始抓取: ${rawNews.length} 条，去重后: ${uniqueNews.length} 条`)
 
     if (uniqueNews.length === 0) {
+      logStatus = 'failed'
+      logMessage = '未抓取到任何新闻'
+      logDetail = siteErrors.join('; ')
+      await prisma.cronExecutionLog.create({
+        data: { jobName: 'fetch-news', status: logStatus, message: logMessage, detail: logDetail },
+      })
       return NextResponse.json({ error: '未抓取到任何新闻' }, { status: 500 })
     }
 
@@ -380,7 +398,7 @@ export async function GET(request: NextRequest) {
     console.log(`✅ AI初筛完成，共 ${allNews.length} 条（≥6分）`)
     console.log(`✅ AI精选完成，共 ${topNews.length} 条`)
 
-    // 3. 存入数据库（today 已在开头定义）
+    // 3. 存入数据库
     await prisma.dailyNews.upsert({
       where: { date: today },
       update: {
@@ -392,6 +410,15 @@ export async function GET(request: NextRequest) {
         topNews: JSON.stringify(topNews),
         allNews: JSON.stringify(allNews),
       },
+    })
+
+    const duration = Date.now() - startTime
+    logMessage = `成功: ${today}, topNews=${topNews.length}, allNews=${allNews.length}, 耗时${duration}ms`
+    if (siteErrors.length > 0) {
+      logDetail = `部分站点失败: ${siteErrors.join('; ')}`
+    }
+    await prisma.cronExecutionLog.create({
+      data: { jobName: 'fetch-news', status: logStatus, message: logMessage, detail: logDetail },
     })
 
     console.log(`✅ 已存入数据库: ${today}`)
@@ -406,6 +433,12 @@ export async function GET(request: NextRequest) {
     })
   } catch (error: any) {
     console.error('抓取每日新闻失败:', error)
+    logStatus = 'failed'
+    logMessage = error.message || '执行失败'
+    logDetail = error.stack || ''
+    await prisma.cronExecutionLog.create({
+      data: { jobName: 'fetch-news', status: logStatus, message: logMessage, detail: logDetail },
+    })
     return NextResponse.json(
       { error: error.message || '执行失败' },
       { status: 500 }
