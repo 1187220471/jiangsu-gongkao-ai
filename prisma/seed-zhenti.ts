@@ -94,9 +94,9 @@ async function main() {
 
     const { examTitle, examYear, examDate, examCategory, questionNumber } = parseExamMeta(file)
 
-    // 检查是否已存在（幂等）
+    // 检查是否已存在（幂等）—— 唯一键：日期 + 类别 + 题号
     const existing = await prisma.zhentiQuestion.findFirst({
-      where: { examDate, questionNumber },
+      where: { examDate, examCategory, questionNumber },
     })
     if (existing) {
       skipCount++
