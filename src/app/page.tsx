@@ -10,9 +10,15 @@ interface QuotaInfo {
   coins: number
 }
 
+interface UserInfo {
+  id: string
+  username: string
+  nickname: string | null
+}
+
 export default function Home() {
   const router = useRouter()
-  const [user, setUser] = useState<any>(null)
+  const [user, setUser] = useState<UserInfo | null>(null)
   const [quota, setQuota] = useState<QuotaInfo | null>(null)
 
   useEffect(() => {

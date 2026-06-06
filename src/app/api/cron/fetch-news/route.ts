@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
 import { jsonrepair } from 'jsonrepair'
+import { prisma } from '@/lib/db'
 
 // 强制动态渲染，防止边缘缓存导致日期错误
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
-
-const prisma = new PrismaClient()
 
 // ============ 网站配置 ============
 

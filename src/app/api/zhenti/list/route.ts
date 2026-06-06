@@ -15,8 +15,8 @@ export async function GET(request: Request) {
     const year = url.searchParams.get('year')
     const category = url.searchParams.get('category')
     const type = url.searchParams.get('type')
-    const page = parseInt(url.searchParams.get('page') || '1')
-    const pageSize = parseInt(url.searchParams.get('pageSize') || '20')
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1'))
+    const pageSize = Math.min(50, Math.max(1, parseInt(url.searchParams.get('pageSize') || '20')))
 
     const where: any = {}
     if (year) where.examYear = parseInt(year)

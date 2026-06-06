@@ -69,12 +69,15 @@ export default function ZhentiDetailPage() {
   const [bookmarkLoading, setBookmarkLoading] = useState(false)
   const [notesInput, setNotesInput] = useState('')
   const [showNotes, setShowNotes] = useState(false)
+  const [imageLoaded, setImageLoaded] = useState(false)
+  const [imageError, setImageError] = useState(false)
 
   useEffect(() => {
     const token = localStorage.getItem('token')
     if (!token) { router.push('/login'); return }
     fetchDetail()
-  }, [id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, router])
 
   const fetchDetail = async () => {
     setLoading(true)
@@ -88,9 +91,8 @@ export default function ZhentiDetailPage() {
       setSiblings(data.siblings || [])
       setBookmark(data.bookmark)
       setNotesInput(data.bookmark?.notes || '')
-    } catch {
-      // ignore
-    } finally {
+    } catch (err) {
+      console.error('获取题目详情失败:', err)
       setLoading(false)
     }
   }
@@ -115,9 +117,8 @@ export default function ZhentiDetailPage() {
         const data = await res.json()
         setBookmark({ proficiency: data.bookmark.proficiency, notes: data.bookmark.notes })
       }
-    } catch {
-      // ignore
-    } finally {
+    } catch (err) {
+      console.error('收藏操作失败:', err)
       setBookmarkLoading(false)
     }
   }
@@ -134,9 +135,8 @@ export default function ZhentiDetailPage() {
       const data = await res.json()
       setBookmark({ proficiency: data.bookmark.proficiency, notes: data.bookmark.notes })
       setShowNotes(false)
-    } catch {
-      // ignore
-    } finally {
+    } catch (err) {
+      console.error('保存备注失败:', err)
       setBookmarkLoading(false)
     }
   }
@@ -233,14 +233,24 @@ export default function ZhentiDetailPage() {
           <p className="text-slate-800 leading-relaxed text-base">
             {question.questionText}
           </p>
-          {question.imageUrl && (
+          {question.imageUrl && !imageError && (
             <div className="mt-4">
+              {!imageLoaded && (
+                <div className="animate-pulse bg-slate-200 h-64 rounded-lg" />
+              )}
               <img
                 src={question.imageUrl}
                 alt="题目配图"
-                className="max-w-full rounded-lg border border-slate-200"
+                className={`max-w-full rounded-lg border border-slate-200 ${imageLoaded ? '' : 'hidden'}`}
                 style={{ maxHeight: '400px' }}
+                onLoad={() => setImageLoaded(true)}
+                onError={() => setImageError(true)}
               />
+            </div>
+          )}
+          {imageError && (
+            <div className="mt-4 text-sm text-slate-400 bg-slate-50 rounded-lg px-4 py-3 text-center">
+              📷 图片加载失败
             </div>
           )}
         </div>

@@ -60,7 +60,10 @@ export default function DailyNewsPage() {
   const [showAllNews, setShowAllNews] = useState(false)
 
   useEffect(() => {
-    const today = new Date().toISOString().split('T')[0]
+    // 使用北京时间（UTC+8）获取日期
+    const now = new Date()
+    const beijingTime = new Date(now.getTime() + (8 * 60 * 60 * 1000))
+    const today = beijingTime.toISOString().split('T')[0]
     setSelectedDate(today)
     fetchNews(today)
   }, [])

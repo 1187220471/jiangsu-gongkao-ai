@@ -1,13 +1,20 @@
 import jwt from 'jsonwebtoken'
 import { NextResponse } from 'next/server'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-key'
+const JWT_SECRET = process.env.JWT_SECRET || ''
 
 export function signToken(payload: { userId: string; username: string }) {
+  if (!JWT_SECRET) {
+    throw new Error('JWT_SECRET 环境变量未设置，请检查环境配置')
+  }
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' })
 }
 
 export function verifyToken(token: string) {
+  if (!JWT_SECRET) {
+    console.error('JWT_SECRET 环境变量未设置')
+    return null
+  }
   try {
     return jwt.verify(token, JWT_SECRET) as { userId: string; username: string }
   } catch {

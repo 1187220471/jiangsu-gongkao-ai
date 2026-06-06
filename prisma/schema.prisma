@@ -102,6 +102,7 @@ model ZhentiQuestion {
 
   @@index([examYear])
   @@index([examDate])
+  @@index([examDate, examCategory])
   @@map("zhenti_question")
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { getAuthHeaders } from '@/lib/auth'
 
@@ -62,9 +62,8 @@ export default function ZhentiPage() {
       setTotal(data.total || 0)
       setTotalPages(data.totalPages || 1)
       if (data.filters) setFilters(data.filters)
-    } catch {
-      // ignore
-    } finally {
+    } catch (err) {
+      console.error('获取真题列表失败:', err)
       setLoading(false)
     }
   }, [selectedYear, selectedCategory, selectedType, router])
@@ -86,13 +85,15 @@ export default function ZhentiPage() {
     ? questions.filter((q) => q.isBookmarked)
     : questions
 
-  // 按场次分组
-  const grouped = displayedQuestions.reduce<Record<string, ZhentiItem[]>>((acc, q) => {
-    const key = q.examTitle
-    if (!acc[key]) acc[key] = []
-    acc[key].push(q)
-    return acc
-  }, {})
+  // 按场次分组（使用 useMemo 避免重复计算）
+  const grouped = useMemo(() => {
+    return displayedQuestions.reduce<Record<string, ZhentiItem[]>>((acc, q) => {
+      const key = q.examTitle
+      if (!acc[key]) acc[key] = []
+      acc[key].push(q)
+      return acc
+    }, {})
+  }, [displayedQuestions])
 
   return (
     <div className="min-h-screen bg-slate-50">

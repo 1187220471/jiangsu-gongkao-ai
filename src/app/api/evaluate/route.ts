@@ -13,9 +13,23 @@ export async function POST(request: Request) {
 
     const { question, referenceAnswer, userAnswer, type } = await request.json()
 
-    if (!question || !userAnswer) {
+    if (!question || typeof question !== 'string' || question.trim().length < 5) {
       return NextResponse.json(
-        { error: '题目和答案不能为空' },
+        { error: '题目不能为空，至少输入5个字' },
+        { status: 400 }
+      )
+    }
+
+    if (!userAnswer || typeof userAnswer !== 'string' || userAnswer.trim().length === 0) {
+      return NextResponse.json(
+        { error: '答案不能为空' },
+        { status: 400 }
+      )
+    }
+
+    if (userAnswer.trim().length > 5000) {
+      return NextResponse.json(
+        { error: '答案字数不能超过5000字' },
         { status: 400 }
       )
     }
@@ -66,9 +80,10 @@ export async function POST(request: Request) {
       remainingFree: Math.max(0, quota.remainingFree - 1),
     })
   } catch (error) {
-    console.error('Evaluate error:', error)
+    const errorId = `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    console.error(`[${errorId}] Evaluate error:`, error)
     return NextResponse.json(
-      { error: '批改失败，请稍后重试' },
+      { error: '批改失败，请稍后重试', errorId },
       { status: 500 }
     )
   }

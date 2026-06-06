@@ -89,9 +89,12 @@ export default function SetAnswerPage() {
 
   const handleSaveAnswer = () => {
     if (!currentQuestion) return
-    const newAnswers = { ...userAnswers, [currentQuestion.index]: currentAnswer }
-    setUserAnswers(newAnswers)
-    localStorage.setItem(`setAnswers_${mode}`, JSON.stringify(newAnswers))
+    // 只保存非空答案，避免空字符串被标记为"已作答"
+    if (currentAnswer.trim()) {
+      const newAnswers = { ...userAnswers, [currentQuestion.index]: currentAnswer.trim() }
+      setUserAnswers(newAnswers)
+      localStorage.setItem(`setAnswers_${mode}`, JSON.stringify(newAnswers))
+    }
   }
 
   const handleNext = () => {

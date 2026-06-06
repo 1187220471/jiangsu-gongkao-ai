@@ -314,6 +314,9 @@ export default function VoiceInput({ onTranscript, disabled, onRecordingChange }
 
   // 停止阿里云录音
   const stopAliyunRecording = useCallback(() => {
+    // 防止重复调用
+    if (!isRecording) return
+    
     // 先断开音频处理，停止发送数据
     if (processorRef.current) {
       try {
@@ -370,7 +373,7 @@ export default function VoiceInput({ onTranscript, disabled, onRecordingChange }
       setIsRecording(false)
       setElapsedTime(0)
     }
-  }, [cleanup])
+  }, [cleanup, isRecording, onTranscript])
 
   // 开始浏览器原生录音
   const startBrowserRecording = useCallback(() => {

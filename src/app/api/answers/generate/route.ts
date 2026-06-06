@@ -12,9 +12,9 @@ export async function POST(request: Request) {
 
     const { question } = await request.json()
 
-    if (!question) {
+    if (!question || typeof question !== 'string' || question.trim().length < 5) {
       return NextResponse.json(
-        { error: '题目不能为空' },
+        { error: '题目不能为空，至少输入5个字' },
         { status: 400 }
       )
     }

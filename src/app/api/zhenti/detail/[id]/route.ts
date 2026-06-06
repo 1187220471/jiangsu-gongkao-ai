@@ -39,10 +39,19 @@ export async function GET(
       orderBy: { questionNumber: 'asc' },
     })
 
+    // 安全解析 comparison JSON
+    let parsedComparison = {}
+    try {
+      parsedComparison = JSON.parse(question.comparison || '{}')
+    } catch {
+      console.warn(`题目 ${id} 的 comparison 字段 JSON 解析失败`)
+      parsedComparison = {}
+    }
+
     return NextResponse.json({
       question: {
         ...question,
-        comparison: JSON.parse(question.comparison || '{}'),
+        comparison: parsedComparison,
       },
       bookmark: bookmark
         ? { proficiency: bookmark.proficiency, notes: bookmark.notes }
