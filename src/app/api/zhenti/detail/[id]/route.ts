@@ -27,17 +27,17 @@ export async function GET(
       return NextResponse.json({ error: '题目不存在' }, { status: 404 })
     }
 
-    // 获取收藏状态
-    const bookmark = await prisma.zhentiBookmark.findUnique({
-      where: { userId_questionId: { userId: auth.userId, questionId: id } },
-    })
-
-    // 获取同场次的其他题目（用于导航）
-    const siblings = await prisma.zhentiQuestion.findMany({
-      where: { examDate: question.examDate, examCategory: question.examCategory },
-      select: { id: true, questionNumber: true },
-      orderBy: { questionNumber: 'asc' },
-    })
+    // 并行获取收藏状态和同场次题目
+    const [bookmark, siblings] = await Promise.all([
+      prisma.zhentiBookmark.findUnique({
+        where: { userId_questionId: { userId: auth.userId, questionId: id } },
+      }),
+      prisma.zhentiQuestion.findMany({
+        where: { examDate: question.examDate, examCategory: question.examCategory },
+        select: { id: true, questionNumber: true },
+        orderBy: { questionNumber: 'asc' },
+      }),
+    ])
 
     // 安全解析 comparison JSON
     let parsedComparison = {}

@@ -29,20 +29,21 @@ export async function GET(request: Request) {
     // 使用统一的额度查询（避免重复计算逻辑）
     const quotaInfo = await getQuotaInfo(auth.userId)
 
-    // 获取使用统计
-    const totalPractices = await prisma.record.count({
-      where: { userId: user.id },
-    })
-
-    const avgScoreResult = await prisma.record.aggregate({
-      where: {
-        userId: user.id,
-        score: { not: null },
-      },
-      _avg: {
-        score: true,
-      },
-    })
+    // 并行获取使用统计
+    const [totalPractices, avgScoreResult] = await Promise.all([
+      prisma.record.count({
+        where: { userId: user.id },
+      }),
+      prisma.record.aggregate({
+        where: {
+          userId: user.id,
+          score: { not: null },
+        },
+        _avg: {
+          score: true,
+        },
+      }),
+    ])
 
     const avgScore = avgScoreResult._avg.score
       ? Math.round(avgScoreResult._avg.score)

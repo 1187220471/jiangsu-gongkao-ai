@@ -1,12 +1,3 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/fetch-news",
-      "schedule": "0 11 * * *"
-    },
-    {
-      "path": "/api/cron/check-news?date=yesterday",
-      "schedule": "0 0 * * *"
-    }
-  ]
+  "regions": ["sin1"]
 }
