@@ -34,8 +34,8 @@ export async function POST(request: Request) {
       )
     }
 
-    // 检查额度
-    const quota = await checkQuota(auth.userId)
+    // 检查额度（批改消耗1点）
+    const quota = await checkQuota(auth.userId, 1)
     if (!quota.allowed) {
       return NextResponse.json(
         { error: quota.message },
@@ -43,8 +43,8 @@ export async function POST(request: Request) {
       )
     }
 
-    // 扣除额度（仅批改扣次，查看参考答案不扣次）
-    await deductQuota(auth.userId)
+    // 扣除额度（批改消耗1点）
+    await deductQuota(auth.userId, 1)
 
     // 如果没有参考答案，并行生成（让用户在批改后直接看到，不额外消耗次数）
     let finalReferenceAnswer = referenceAnswer || ''
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
       ...result,
       referenceAnswer: finalReferenceAnswer,
       recordId: record.id,
-      remainingFree: Math.max(0, quota.remainingFree - 2),
+      remainingFree: Math.max(0, quota.remainingFree - 1),
     })
   } catch (error) {
     const errorId = `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`

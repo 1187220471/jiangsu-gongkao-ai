@@ -6,12 +6,18 @@ export interface QuotaCheckResult {
   message: string
 }
 
+// 内部存储倍数：0.5点 = 1个存储单位
+const SCALE = 2
+// 每日免费额度：5点 = 10个存储单位
+const DAILY_FREE_POINTS = 5
+const DAILY_FREE_STORAGE = DAILY_FREE_POINTS * SCALE
+
 /**
  * 检查用户是否有额度调用AI服务
  * - 邀请用户：无限次（在有效期内）
- * - 普通用户：每日10点免费（1次出题=1点，1次批改=2点）
+ * - 普通用户：每日5点免费（1次出题=0.5点，1次批改=1点）
  */
-export async function checkQuota(userId: string, cost: number = 2): Promise<QuotaCheckResult> {
+export async function checkQuota(userId: string, costInPoints: number = 1): Promise<QuotaCheckResult> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -38,32 +44,36 @@ export async function checkQuota(userId: string, cost: number = 2): Promise<Quot
   const isSameDay = resetAt.toDateString() === now.toDateString()
 
   if (!isSameDay) {
-    // 重置免费点数为10点（=5次批改或10次出题）
+    // 重置免费额度为5点（存储为10）
     await prisma.user.update({
       where: { id: userId },
       data: {
-        dailyFreeCount: 10,
+        dailyFreeCount: DAILY_FREE_STORAGE,
         freeCountResetAt: now,
       },
     })
-    return { allowed: true, remainingFree: 10, message: '今日免费额度已重置（10点）' }
+    return { allowed: true, remainingFree: DAILY_FREE_POINTS, message: '今日免费额度已重置（5点）' }
   }
 
+  // 将存储单位转换为显示点数
+  const remainingPoints = user.dailyFreeCount / SCALE
+  const costStorage = costInPoints * SCALE
+
   // 3. 检查免费点数是否足够
-  if (user.dailyFreeCount >= cost) {
+  if (user.dailyFreeCount >= costStorage) {
     return {
       allowed: true,
-      remainingFree: user.dailyFreeCount,
-      message: `今日剩余额度：${user.dailyFreeCount}点`,
+      remainingFree: remainingPoints,
+      message: `今日剩余额度：${remainingPoints}点`,
     }
   }
 
-  // 4. 免费点数不够，检查是否有练习币（1币=2点）
-  const totalPoints = user.dailyFreeCount + user.coins * 2
-  if (totalPoints >= cost) {
+  // 4. 免费点数不够，检查是否有练习币（1币=1点=2存储单位）
+  const totalStorage = user.dailyFreeCount + user.coins * SCALE
+  if (totalStorage >= costStorage) {
     return {
       allowed: true,
-      remainingFree: user.dailyFreeCount,
+      remainingFree: remainingPoints,
       message: `免费点数不足，将扣除练习币（剩余${user.coins}币）`,
     }
   }
@@ -72,15 +82,15 @@ export async function checkQuota(userId: string, cost: number = 2): Promise<Quot
   return {
     allowed: false,
     remainingFree: 0,
-    message: '本日额度已用完。每日10点（1次出题=1点，1次批改=2点），明日自动恢复。',
+    message: '当日额度已用完，请等待0点刷新额度。',
   }
 }
 
 /**
  * 扣除用户额度（免费次数或练习币）
- * @param cost 消耗点数，1点=0.5次。默认2点=1次批改
+ * @param costInPoints 消耗点数，0.5点=出题，1点=批改。默认1点
  */
-export async function deductQuota(userId: string, cost: number = 2): Promise<void> {
+export async function deductQuota(userId: string, costInPoints: number = 1): Promise<void> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -99,21 +109,23 @@ export async function deductQuota(userId: string, cost: number = 2): Promise<voi
     return
   }
 
-  // 有免费次数先扣免费次数（点数制）
-  if (user.dailyFreeCount >= cost) {
+  const costStorage = costInPoints * SCALE
+
+  // 有免费点数先扣免费点数
+  if (user.dailyFreeCount >= costStorage) {
     await prisma.user.update({
       where: { id: userId },
-      data: { dailyFreeCount: { decrement: cost } },
+      data: { dailyFreeCount: { decrement: costStorage } },
     })
     return
   }
 
-  // 免费点数不够，先扣完剩余点数，再扣练习币（1币=2点）
-  const remainingPoints = user.dailyFreeCount
-  const pointsNeeded = cost - remainingPoints
-  const coinsNeeded = Math.ceil(pointsNeeded / 2)
+  // 免费点数不够，先扣完剩余点数，再扣练习币（1币=1点=2存储单位）
+  const remainingStorage = user.dailyFreeCount
+  const storageNeeded = costStorage - remainingStorage
+  const coinsNeeded = Math.ceil(storageNeeded / SCALE)
 
-  if (remainingPoints > 0) {
+  if (remainingStorage > 0) {
     if (user.coins >= coinsNeeded) {
       // 扣完剩余点数 + 扣币
       await prisma.user.update({
@@ -158,9 +170,9 @@ export async function getQuotaInfo(userId: string) {
   const resetAt = new Date(user.freeCountResetAt)
   const isSameDay = resetAt.toDateString() === now.toDateString()
 
-  let remainingFree = user.dailyFreeCount
+  let remainingFree = user.dailyFreeCount / SCALE
   if (!isSameDay) {
-    remainingFree = 10 // 跨天了，还没重置，前端显示10点
+    remainingFree = DAILY_FREE_POINTS // 跨天了，还没重置，前端显示5点
   }
 
   const hasAccess = user.accessLevel !== 'none' && user.accessExpire && user.accessExpire > now

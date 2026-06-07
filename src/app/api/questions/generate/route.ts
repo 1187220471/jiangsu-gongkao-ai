@@ -24,8 +24,8 @@ export async function POST(request: Request) {
       )
     }
 
-    // 检查额度（出题消耗1点=0.5次）
-    const quota = await checkQuota(auth.userId, 1)
+    // 检查额度（出题消耗0.5点）
+    const quota = await checkQuota(auth.userId, 0.5)
     if (!quota.allowed) {
       return NextResponse.json(
         { error: quota.message },
@@ -59,8 +59,8 @@ export async function POST(request: Request) {
       return { question, topic }
     })
 
-    // 扣除额度（出题消耗1点=0.5次）
-    await deductQuota(auth.userId, 1)
+    // 扣除额度（出题消耗0.5点）
+    await deductQuota(auth.userId, 0.5)
 
     return NextResponse.json({
       question: result.question,
