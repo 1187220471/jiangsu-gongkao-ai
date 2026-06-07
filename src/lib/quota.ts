@@ -9,9 +9,9 @@ export interface QuotaCheckResult {
 /**
  * 检查用户是否有额度调用AI服务
  * - 邀请用户：无限次（在有效期内）
- * - 普通用户：每日5次免费
+ * - 普通用户：每日10点免费（1次出题=1点，1次批改=2点）
  */
-export async function checkQuota(userId: string): Promise<QuotaCheckResult> {
+export async function checkQuota(userId: string, cost: number = 2): Promise<QuotaCheckResult> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -33,37 +33,38 @@ export async function checkQuota(userId: string): Promise<QuotaCheckResult> {
     return { allowed: true, remainingFree: 999, message: '邀请用户，无限使用' }
   }
 
-  // 2. 检查是否需要重置每日免费次数（跨天了）
+  // 2. 检查是否需要重置每日免费点数（跨天了）
   const resetAt = new Date(user.freeCountResetAt)
   const isSameDay = resetAt.toDateString() === now.toDateString()
 
   if (!isSameDay) {
-    // 重置免费次数
+    // 重置免费点数为10点（=5次批改或10次出题）
     await prisma.user.update({
       where: { id: userId },
       data: {
-        dailyFreeCount: 5,
+        dailyFreeCount: 10,
         freeCountResetAt: now,
       },
     })
-    return { allowed: true, remainingFree: 5, message: '今日免费额度已重置（5次）' }
+    return { allowed: true, remainingFree: 10, message: '今日免费额度已重置（10点）' }
   }
 
-  // 3. 检查免费次数
-  if (user.dailyFreeCount > 0) {
+  // 3. 检查免费点数是否足够
+  if (user.dailyFreeCount >= cost) {
     return {
       allowed: true,
       remainingFree: user.dailyFreeCount,
-      message: `今日剩余免费次数：${user.dailyFreeCount}次`,
+      message: `今日剩余额度：${user.dailyFreeCount}点`,
     }
   }
 
-  // 4. 免费次数用完了，检查是否有练习币
-  if (user.coins > 0) {
+  // 4. 免费点数不够，检查是否有练习币（1币=2点）
+  const totalPoints = user.dailyFreeCount + user.coins * 2
+  if (totalPoints >= cost) {
     return {
       allowed: true,
-      remainingFree: 0,
-      message: `免费次数已用完，将扣除练习币（剩余${user.coins}币）`,
+      remainingFree: user.dailyFreeCount,
+      message: `免费点数不足，将扣除练习币（剩余${user.coins}币）`,
     }
   }
 
@@ -71,14 +72,15 @@ export async function checkQuota(userId: string): Promise<QuotaCheckResult> {
   return {
     allowed: false,
     remainingFree: 0,
-    message: '本日额度已用完。每日5次，明日自动恢复。',
+    message: '本日额度已用完。每日10点（1次出题=1点，1次批改=2点），明日自动恢复。',
   }
 }
 
 /**
  * 扣除用户额度（免费次数或练习币）
+ * @param cost 消耗点数，1点=0.5次。默认2点=1次批改
  */
-export async function deductQuota(userId: string): Promise<void> {
+export async function deductQuota(userId: string, cost: number = 2): Promise<void> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -97,22 +99,41 @@ export async function deductQuota(userId: string): Promise<void> {
     return
   }
 
-  // 有免费次数先扣免费次数
-  if (user.dailyFreeCount > 0) {
+  // 有免费次数先扣免费次数（点数制）
+  if (user.dailyFreeCount >= cost) {
     await prisma.user.update({
       where: { id: userId },
-      data: { dailyFreeCount: { decrement: 1 } },
+      data: { dailyFreeCount: { decrement: cost } },
     })
     return
   }
 
-  // 免费次数用完了扣练习币
-  if (user.coins > 0) {
-    await prisma.user.update({
-      where: { id: userId },
-      data: { coins: { decrement: 1 } },
-    })
-    return
+  // 免费点数不够，先扣完剩余点数，再扣练习币（1币=2点）
+  const remainingPoints = user.dailyFreeCount
+  const pointsNeeded = cost - remainingPoints
+  const coinsNeeded = Math.ceil(pointsNeeded / 2)
+
+  if (remainingPoints > 0) {
+    if (user.coins >= coinsNeeded) {
+      // 扣完剩余点数 + 扣币
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          dailyFreeCount: 0,
+          coins: { decrement: coinsNeeded },
+        },
+      })
+      return
+    }
+  } else {
+    // 没有免费点数了，直接扣币
+    if (user.coins > 0) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { coins: { decrement: Math.max(1, coinsNeeded) } },
+      })
+      return
+    }
   }
 }
 
@@ -139,7 +160,7 @@ export async function getQuotaInfo(userId: string) {
 
   let remainingFree = user.dailyFreeCount
   if (!isSameDay) {
-    remainingFree = 5 // 跨天了，还没重置，前端显示5次
+    remainingFree = 10 // 跨天了，还没重置，前端显示10点
   }
 
   const hasAccess = user.accessLevel !== 'none' && user.accessExpire && user.accessExpire > now

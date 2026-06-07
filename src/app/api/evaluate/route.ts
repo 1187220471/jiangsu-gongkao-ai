@@ -77,7 +77,7 @@ export async function POST(request: Request) {
       ...result,
       referenceAnswer: finalReferenceAnswer,
       recordId: record.id,
-      remainingFree: Math.max(0, quota.remainingFree - 1),
+      remainingFree: Math.max(0, quota.remainingFree - 2),
     })
   } catch (error) {
     const errorId = `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`

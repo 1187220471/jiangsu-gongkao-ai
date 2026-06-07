@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { generateQuestion } from '@/lib/ai'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
-import { checkQuota } from '@/lib/quota'
+import { checkQuota, deductQuota } from '@/lib/quota'
 
 // 每个用户保留最近使用过的主题数量（FIFO队列）
 // 增大到25以减少短周期内重复（原为10，社会现象类主题池有40+个）
@@ -24,8 +24,8 @@ export async function POST(request: Request) {
       )
     }
 
-    // 检查额度
-    const quota = await checkQuota(auth.userId)
+    // 检查额度（出题消耗1点=0.5次）
+    const quota = await checkQuota(auth.userId, 1)
     if (!quota.allowed) {
       return NextResponse.json(
         { error: quota.message },
@@ -56,13 +56,15 @@ export async function POST(request: Request) {
         data: { recentTopics: updatedTopics },
       })
 
-      return { question, topic, remainingFree: quota.remainingFree }
+      return { question, topic }
     })
+
+    // 扣除额度（出题消耗1点=0.5次）
+    await deductQuota(auth.userId, 1)
 
     return NextResponse.json({
       question: result.question,
       type,
-      remainingFree: result.remainingFree,
     })
   } catch (error) {
     console.error('Generate question error:', error)
