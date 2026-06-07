@@ -12,6 +12,7 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@alicloud/pop-core": "^1.8.0",
     "@neondatabase/serverless": "^1.1.0",
     "@prisma/client": "^5.22.0",
     "@types/bcryptjs": "^2.4.6",

@@ -64,6 +64,7 @@ export default function ZhentiPage() {
       if (data.filters) setFilters(data.filters)
     } catch (err) {
       console.error('获取真题列表失败:', err)
+    } finally {
       setLoading(false)
     }
   }, [selectedYear, selectedCategory, selectedType, router])
