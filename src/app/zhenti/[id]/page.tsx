@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { getAuthHeaders } from '@/lib/auth'
 import IndentedText from '@/components/IndentedText'
+import VoiceInput from '@/components/VoiceInput'
+import AudioUploader from '@/components/AudioUploader'
 
 interface ComparisonItem {
   answer_id: number
@@ -75,12 +77,29 @@ export default function ZhentiDetailPage() {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageError, setImageError] = useState(false)
 
+  // === 答题状态 ===
+  const [userAnswer, setUserAnswer] = useState('')
+  const [evaluateLoading, setEvaluateLoading] = useState(false)
+  const [evaluation, setEvaluation] = useState('')
+  const [improvedAnswer, setImprovedAnswer] = useState('')
+  const [score, setScore] = useState<number | null>(null)
+  const [answerCollapsed, setAnswerCollapsed] = useState(false)
+  const [isVoiceRecording, setIsVoiceRecording] = useState(false)
+  const voicePreviewRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
     const token = localStorage.getItem('token')
     if (!token) { router.push('/login'); return }
     fetchDetail()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, router])
+
+  // 语音预览框自动滚动到底部
+  useEffect(() => {
+    if (voicePreviewRef.current) {
+      voicePreviewRef.current.scrollTop = voicePreviewRef.current.scrollHeight
+    }
+  }, [userAnswer])
 
   const fetchDetail = async () => {
     setLoading(true)
@@ -145,6 +164,61 @@ export default function ZhentiDetailPage() {
     }
   }
 
+  // === 提交批改 ===
+  const handleEvaluate = async () => {
+    if (!question) return
+    if (!userAnswer.trim()) {
+      alert('请先输入或语音录入你的答案')
+      return
+    }
+
+    setEvaluateLoading(true)
+    try {
+      const res = await fetch('/api/zhenti/evaluate', {
+        method: 'POST',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questionId: question.id,
+          questionText: question.questionText,
+          referenceAnswer: question.finalAnswer,
+          userAnswer,
+          questionType: question.questionType,
+        }),
+      })
+
+      const data = await res.json()
+      if (res.status === 403) {
+        alert(data.error || '今日额度已用完')
+        return
+      }
+      if (data.evaluation) {
+        setEvaluation(data.evaluation)
+        setScore(data.score)
+        setImprovedAnswer(data.improvedAnswer || '')
+        setAnswerCollapsed(true)
+        // 滚到结果区
+        setTimeout(() => {
+          document.getElementById('zhenti-eval-result')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 100)
+      } else {
+        alert(data.error || '批改失败')
+      }
+    } catch (err) {
+      console.error('批改失败:', err)
+      alert('网络错误，请稍后重试')
+    } finally {
+      setEvaluateLoading(false)
+    }
+  }
+
+  const handleResetAnswer = () => {
+    setUserAnswer('')
+    setEvaluation('')
+    setImprovedAnswer('')
+    setScore(null)
+    setAnswerCollapsed(false)
+  }
+
   const navigateTo = (sibId: number) => {
     router.push(`/zhenti/${sibId}`)
   }
@@ -175,6 +249,7 @@ export default function ZhentiDetailPage() {
   }
 
   const compItems: ComparisonItem[] = question.comparison?.comparison || []
+  const hasResult = Boolean(evaluation)
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -265,6 +340,138 @@ export default function ZhentiDetailPage() {
           {imageError && (
             <div className="mt-4 text-sm text-slate-400 bg-slate-50 rounded-lg px-4 py-3 text-center">
               📷 图片加载失败
+            </div>
+          )}
+        </div>
+
+        {/* === 我的作答卡片 === */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          {/* 卡片头 */}
+          <button
+            onClick={() => setAnswerCollapsed(!answerCollapsed)}
+            className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🎤</span>
+              <span className="font-bold text-slate-800">我的作答</span>
+              {hasResult && score !== null && (
+                <span className={`text-sm font-bold ${SCORE_COLOR(score)}`}>
+                  · {score}分
+                </span>
+              )}
+            </div>
+            <span className={`text-slate-400 text-xl transition-transform ${answerCollapsed ? '' : 'rotate-90'}`}>
+              ›
+            </span>
+          </button>
+
+          {!answerCollapsed && (
+            <div className="px-6 pb-6 border-t border-slate-100">
+              {!hasResult ? (
+                <>
+                  {/* 语音实时转写预览 */}
+                  {isVoiceRecording && (
+                    <div
+                      ref={voicePreviewRef}
+                      className="mt-4 ml-auto w-1/2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-sm text-slate-700"
+                      style={{ height: 48, overflowY: 'hidden', overflowX: 'hidden', wordBreak: 'break-all' }}
+                    >
+                      {userAnswer || '等待语音识别...'}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between mt-4 mb-3">
+                    <span className="text-sm text-slate-500">输入或语音录入你的答案：</span>
+                    <div className="flex items-center gap-2">
+                      <AudioUploader
+                        onTranscript={(text) => setUserAnswer((prev) => prev + text)}
+                        disabled={evaluateLoading}
+                      />
+                      <VoiceInput
+                        onTranscript={(text) => setUserAnswer((prev) => prev + text)}
+                        disabled={evaluateLoading}
+                        onRecordingChange={setIsVoiceRecording}
+                      />
+                    </div>
+                  </div>
+                  <textarea
+                    value={userAnswer}
+                    onChange={(e) => setUserAnswer(e.target.value)}
+                    disabled={evaluateLoading}
+                    className="w-full h-48 px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none text-slate-700 leading-relaxed disabled:opacity-50"
+                    placeholder="请先自己作答，再与下方参考答案对比学习..."
+                  />
+                  <div className="flex items-center justify-between mt-3">
+                    <div className="text-sm text-slate-400">{userAnswer.length} 字</div>
+                    <button
+                      onClick={handleEvaluate}
+                      disabled={evaluateLoading || !userAnswer.trim()}
+                      className="bg-primary-600 hover:bg-primary-700 text-white font-medium px-6 py-2.5 rounded-xl transition-colors disabled:opacity-50"
+                    >
+                      {evaluateLoading ? '批改中...' : '📝 提交AI批改'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div id="zhenti-eval-result" className="mt-4 space-y-4">
+                  {/* 得分 */}
+                  <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">📊</span>
+                      <span className="font-bold text-amber-800">AI批改结果</span>
+                    </div>
+                    {score !== null && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-slate-500">得分：</span>
+                        <span className={`text-2xl font-bold ${SCORE_COLOR(score)}`}>{score}</span>
+                        <span className="text-slate-400">/100</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 点评 */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-4">
+                    <div className="text-slate-700 leading-relaxed whitespace-pre-wrap text-sm">
+                      {evaluation}
+                    </div>
+                  </div>
+
+                  {/* 改进版答案 */}
+                  {improvedAnswer && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-lg">✨</span>
+                        <span className="font-bold text-blue-800">改进版答案</span>
+                      </div>
+                      <IndentedText
+                        text={improvedAnswer}
+                        className="text-slate-700 leading-loose text-sm"
+                      />
+                    </div>
+                  )}
+
+                  {/* 我的原始答案 */}
+                  {userAnswer && (
+                    <details className="bg-slate-50 border border-slate-200 rounded-xl">
+                      <summary className="px-4 py-3 text-sm font-medium text-slate-600 cursor-pointer hover:bg-slate-100">
+                        📝 查看我的原始答案（{userAnswer.length} 字）
+                      </summary>
+                      <div className="px-4 pb-4 text-slate-600 leading-relaxed whitespace-pre-wrap text-sm">
+                        {userAnswer}
+                      </div>
+                    </details>
+                  )}
+
+                  <div className="text-center pt-2">
+                    <button
+                      onClick={handleResetAnswer}
+                      className="text-sm text-slate-400 hover:text-primary-600 transition-colors"
+                    >
+                      🔄 再练一遍
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
