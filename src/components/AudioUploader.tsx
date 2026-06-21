@@ -28,10 +28,7 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
   const abortRef = useRef(false)
   const isPausedRef = useRef(false)
   const pauseResolveRef = useRef<(() => void) | null>(null)
-  const currentWsRef = useRef<WebSocket | null>(null)   // 当前段的 WS，用于立即暂停
-  const currentTaskIdRef = useRef<string>('')
-  const currentAppKeyRef = useRef<string>('')
-  const stopSentRef = useRef(false)                     // 防止重复发送 StopRecognition
+  const currentWsRef = useRef<WebSocket | null>(null)   // 用于 handleStop 立即关闭当前段
 
   /** 生成32位十六进制ID（阿里云要求） */
   const generateId = () =>
@@ -50,9 +47,6 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
       const ws = new WebSocket(wsUrl)
       const taskId = generateId()
       currentWsRef.current = ws
-      currentTaskIdRef.current = taskId
-      currentAppKeyRef.current = appKey
-      stopSentRef.current = false
 
       let segmentFullText = ''
       let segmentLastText = ''
@@ -118,8 +112,7 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
             audioStarted = true
             sendSegmentData(ws, pcmData).then(() => {
               console.log(`[段${segmentIndex + 1}] 音频数据发送完成，发送StopRecognition`)
-              if (ws.readyState === WebSocket.OPEN && !stopSentRef.current) {
-                stopSentRef.current = true
+              if (ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                   header: {
                     message_id: generateId(),
@@ -234,6 +227,10 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
     abortRef.current = true
     isPausedRef.current = false
     setIsPaused(false)
+    // 立即关闭当前段 WS，中断识别
+    if (currentWsRef.current && currentWsRef.current.readyState === WebSocket.OPEN) {
+      try { currentWsRef.current.close() } catch {}
+    }
     if (pauseResolveRef.current) {
       pauseResolveRef.current()
       pauseResolveRef.current = null
