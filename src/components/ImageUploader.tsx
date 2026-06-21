@@ -7,6 +7,46 @@ interface ImageUploaderProps {
   disabled?: boolean
 }
 
+// 压缩图片：限制长边最大 2000px，输出 JPEG 质量 0.85
+function compressImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+
+      const MAX_LONG_SIDE = 2000
+      let { width, height } = img
+      if (width > MAX_LONG_SIDE || height > MAX_LONG_SIDE) {
+        const ratio = MAX_LONG_SIDE / Math.max(width, height)
+        width = Math.round(width * ratio)
+        height = Math.round(height * ratio)
+      }
+
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        reject(new Error('无法创建 Canvas'))
+        return
+      }
+      ctx.drawImage(img, 0, 0, width, height)
+
+      const base64 = canvas.toDataURL('image/jpeg', 0.85)
+      resolve(base64)
+    }
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('图片加载失败'))
+    }
+
+    img.src = url
+  })
+}
+
 export default function ImageUploader({ onRecognized, disabled }: ImageUploaderProps) {
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -28,13 +68,8 @@ export default function ImageUploader({ onRecognized, disabled }: ImageUploaderP
     setUploading(true)
 
     try {
-      // 用 FileReader 读 base64
-      const base64: string = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload = () => resolve(reader.result as string)
-        reader.onerror = () => reject(new Error('文件读取失败'))
-        reader.readAsDataURL(file)
-      })
+      // 压缩图片（长边 max 2000px，JPEG 质量 0.85），大幅缩小 base64
+      const base64 = await compressImage(file)
 
       // 调 OCR API
       const token = localStorage.getItem('token')
@@ -59,7 +94,6 @@ export default function ImageUploader({ onRecognized, disabled }: ImageUploaderP
       alert(err.message || '图片识别失败，请重试')
     } finally {
       setUploading(false)
-      // 清空 input 允许重复选同一文件
       try {
         if (fileInputRef.current) fileInputRef.current.value = ''
       } catch {
