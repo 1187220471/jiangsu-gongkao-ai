@@ -419,3 +419,124 @@ ID 204 和 ID 201 的图片"之前是正确加载的，现在又看不到了"，
 - Last-Seen: 2026-06-07
 
 ---
+
+## [LRN-20260621-001] correction
+
+**Logged**: 2026-06-21T20:44:00+08:00
+**Priority**: critical
+**Status**: pending
+**Area**: frontend
+
+### Summary
+对 JSX 文件做多次小块 Edit 极易破坏标签嵌套结构。Edit 失败后继续盲试 old_string 会陷入死循环。应直接 Write 覆盖全文件。
+
+### Details
+修改 page.tsx 时：多了一个 `}` 导致组件提前闭合 → Edit 修复失败（old_string 不唯一）→ 反复 Read 20+ 次尝试匹配 → 陷入循环。git checkout 恢复后又再次发生。
+
+**根因**：JSX 嵌套复杂，小块 Edit 容易引入结构性错误；Edit 要求 old_string 唯一，但 JSX 中大量相似闭合标签（`</div>` 等）。
+
+### Suggested Action
+1. JSX 结构性修改优先用 Write 覆盖
+2. 必须用 Edit 时：old_string 至少 5 行上下文，一次完成尽可能多修改
+3. 第一次 Edit 失败 → 立即切换 Write，不反复尝试
+4. 修改前 git stash 备份
+
+### Metadata
+- Source: error
+- Related Files: src/app/shenlun/[id]/page.tsx
+- Tags: jsx, edit-tool, infinite-loop, agent-behavior
+- Pattern-Key: harden.jsx-edit-strategy
+- Recurrence-Count: 2
+- First-Seen: 2026-06-21
+- Last-Seen: 2026-06-21
+
+---
+
+## [LRN-20260621-002] correction
+
+**Logged**: 2026-06-21T20:44:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+调用第三方 API 必须先查文档确认参数格式。阿里云 OCR 的 Data 字段返回 JSON 字符串而非对象，需要二次解析。
+
+### Details
+盲试了 6+ 个测试脚本，试不同 Content-Type/apiVersion/参数名。调通后发现 result.Data 是 JSON 字符串 "{\"content\":\"...\"}"，不是对象，需要 JSON.parse 二次解析。
+
+### Suggested Action
+1. 先查官方文档确认参数和返回格式
+2. 优先用官方 SDK（@alicloud/pop-core）
+3. 调试时先打印完整返回数据
+4. 防御性解析：typeof x === 'string' ? JSON.parse(x) : x
+
+### Metadata
+- Source: error
+- Related Files: src/app/api/shenlun/ocr/route.ts
+- Tags: aliyun, ocr, api-integration, blind-testing
+- Pattern-Key: harden.api-documentation-first
+- Recurrence-Count: 1
+- First-Seen: 2026-06-21
+- Last-Seen: 2026-06-21
+
+---
+
+## [LRN-20260621-003] correction
+
+**Logged**: 2026-06-21T20:44:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: infra
+
+### Summary
+git checkout 恢复文件时，若文件从未被提交过，所有未提交修改将永久丢失。
+
+### Details
+AI 批改功能（6/17 开发）从未 git commit，被 checkout 覆盖后丢失。
+
+### Suggested Action
+1. 功能完成后立即 git commit
+2. checkout 前先 git stash
+3. 每个功能点一个 commit
+
+### Metadata
+- Source: error
+- Related Files: src/app/shenlun/[id]/page.tsx
+- Tags: git, checkout, data-loss
+- Pattern-Key: harden.commit-before-modify
+- Recurrence-Count: 1
+- First-Seen: 2026-06-21
+- Last-Seen: 2026-06-21
+
+---
+
+## [LRN-20260621-004] insight
+
+**Logged**: 2026-06-21T20:44:00+08:00
+**Priority**: critical
+**Status**: pending
+**Area**: frontend
+
+### Summary
+AI Agent 循环自检规则：同一文件 Read 超 3 次且无成功 Edit → 立即切换 Write。连续 Edit 失败 2 次 → 停止 Edit。
+
+### Details
+本次会话 2 次严重循环（各 20+ 次 Read），都符合 Edit 失败 → Read → 再试的无限循环模式。需要内化自检机制。
+
+### Suggested Action
+1. 每次 Edit 前预判 old_string 唯一性
+2. 第一次 Edit 失败 → 第二次直接 Write
+3. 同一任务 10+ 次无进展调用 → 向用户声明困境
+4. 建议将此规则写入项目记忆文件
+
+### Metadata
+- Source: insight
+- Related Files: N/A
+- Tags: agent-behavior, infinite-loop, self-awareness
+- Pattern-Key: harden.loop-prevention
+- Recurrence-Count: 2
+- First-Seen: 2026-06-21
+- Last-Seen: 2026-06-21
+
+---

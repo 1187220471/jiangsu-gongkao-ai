@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, ChangeEvent } from 'react'
+import { useState, useRef } from 'react'
 
 interface ImageUploaderProps {
   onRecognized: (text: string) => void
@@ -9,38 +9,34 @@ interface ImageUploaderProps {
 
 export default function ImageUploader({ onRecognized, disabled }: ImageUploaderProps) {
   const [uploading, setUploading] = useState(false)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    // 验证文件类型
-    if (!file.type.startsWith('image/')) {
+    if (!file.type.match(/^image\//)) {
       alert('请选择图片文件')
       return
     }
 
-    // 验证文件大小（最大 20MB）
-    if (file.size > 20 * 1024 * 1024) {
-      alert('图片大小不能超过 20MB')
+    if (file.size > 10 * 1024 * 1024) {
+      alert('图片大小不能超过 10MB')
       return
     }
 
-    // 读取文件为 base64
-    const reader = new FileReader()
-    reader.onload = async (event) => {
-      const base64 = event.target?.result as string
-      setPreviewUrl(base64)
-      await recognizeText(base64)
-    }
-    reader.readAsDataURL(file)
-  }
-
-  const recognizeText = async (base64Image: string) => {
     setUploading(true)
+
     try {
+      // 用 FileReader 读 base64
+      const base64: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = () => reject(new Error('文件读取失败'))
+        reader.readAsDataURL(file)
+      })
+
+      // 调 OCR API
       const token = localStorage.getItem('token')
       const res = await fetch('/api/shenlun/ocr', {
         method: 'POST',
@@ -48,7 +44,7 @@ export default function ImageUploader({ onRecognized, disabled }: ImageUploaderP
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ image: base64Image }),
+        body: JSON.stringify({ image: base64 }),
       })
 
       if (!res.ok) {
@@ -58,21 +54,17 @@ export default function ImageUploader({ onRecognized, disabled }: ImageUploaderP
 
       const data = await res.json()
       onRecognized(data.text)
-      setPreviewUrl(null)
     } catch (err: any) {
+      console.error('OCR识别失败:', err)
       alert(err.message || '图片识别失败，请重试')
     } finally {
       setUploading(false)
-      // 清空 input，允许重复选择同一文件
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
+      // 清空 input 允许重复选同一文件
+      try {
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      } catch {
+        // ignore
       }
-    }
-  }
-
-  const handleClick = () => {
-    if (!uploading && !disabled) {
-      fileInputRef.current?.click()
     }
   }
 
@@ -81,15 +73,14 @@ export default function ImageUploader({ onRecognized, disabled }: ImageUploaderP
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
-        capture="environment"
+        accept="image/png,image/jpeg,image/jpg,image/webp,image/bmp,image/gif"
         onChange={handleFileSelect}
         className="hidden"
         disabled={uploading || disabled}
       />
 
       <button
-        onClick={handleClick}
+        onClick={() => fileInputRef.current?.click()}
         disabled={uploading || disabled}
         className="text-xs flex items-center gap-1.5 text-slate-500 hover:text-primary-600 transition-colors disabled:opacity-50"
       >
@@ -105,20 +96,6 @@ export default function ImageUploader({ onRecognized, disabled }: ImageUploaderP
           </>
         )}
       </button>
-
-      {/* 图片预览 */}
-      {previewUrl && (
-        <div className="mt-2 relative">
-          <img
-            src={previewUrl}
-            alt="预览"
-            className="max-h-32 rounded-lg border border-slate-200 object-contain"
-          />
-          <div className="absolute inset-0 flex items-center justify-center bg-black/30 rounded-lg">
-            <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></span>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

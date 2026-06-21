@@ -396,11 +396,22 @@ export default function ShenlunDetailPage() {
                 }}
                 className={`flex-shrink-0 px-4 py-3 text-sm font-medium transition-colors whitespace-nowrap ${
                   activeAnswerIndex === idx
-                    ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50'
-                    : 'text-slate-500 hover:text-slate-700'
+                    ? ans.teacherName === 'AI参考答案'
+                      ? 'text-amber-700 border-b-2 border-amber-500 bg-amber-50'
+                      : 'text-primary-600 border-b-2 border-primary-600 bg-primary-50'
+                    : ans.teacherName === 'AI参考答案'
+                      ? 'text-amber-600 hover:text-amber-700'
+                      : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                {ans.teacherName}
+                {ans.teacherName === 'AI参考答案' ? (
+                  <span className="flex items-center gap-1">
+                    <span className="text-sm">✨</span>
+                    {ans.teacherName}
+                  </span>
+                ) : (
+                  ans.teacherName
+                )}
               </button>
             ))}
           </div>
@@ -410,7 +421,15 @@ export default function ShenlunDetailPage() {
             <div className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-slate-800">{currentAnswer.teacherName} 参考答案</span>
+                  {currentAnswer.teacherName === 'AI参考答案' ? (
+                    <span className="inline-flex items-center gap-1.5 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-full px-3 py-1">
+                      <span className="text-sm">✨</span>
+                      <span className="text-sm font-bold text-amber-700">AI参考答案</span>
+                      <span className="text-[10px] bg-amber-500 text-white rounded-full px-1.5 py-0.5 font-medium">推荐</span>
+                    </span>
+                  ) : (
+                    <span className="text-sm font-bold text-slate-800">{currentAnswer.teacherName} 参考答案</span>
+                  )}
                   <span className="text-xs text-slate-400">（{answerChars} 字）</span>
                 </div>
                 <button
