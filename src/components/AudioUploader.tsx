@@ -23,8 +23,15 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
   const [isUploading, setIsUploading] = useState(false)
   const [progress, setProgress] = useState('')
   const [realtimeText, setRealtimeText] = useState('')
+  const [isPaused, setIsPaused] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef(false)
+  const isPausedRef = useRef(false)
+  const pauseResolveRef = useRef<(() => void) | null>(null)
+  const currentWsRef = useRef<WebSocket | null>(null)   // 当前段的 WS，用于立即暂停
+  const currentTaskIdRef = useRef<string>('')
+  const currentAppKeyRef = useRef<string>('')
+  const stopSentRef = useRef(false)                     // 防止重复发送 StopRecognition
 
   /** 生成32位十六进制ID（阿里云要求） */
   const generateId = () =>
@@ -42,6 +49,10 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
       const wsUrl = `wss://nls-gateway.cn-shanghai.aliyuncs.com/ws/v1?token=${token}`
       const ws = new WebSocket(wsUrl)
       const taskId = generateId()
+      currentWsRef.current = ws
+      currentTaskIdRef.current = taskId
+      currentAppKeyRef.current = appKey
+      stopSentRef.current = false
 
       let segmentFullText = ''
       let segmentLastText = ''
@@ -107,7 +118,8 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
             audioStarted = true
             sendSegmentData(ws, pcmData).then(() => {
               console.log(`[段${segmentIndex + 1}] 音频数据发送完成，发送StopRecognition`)
-              if (ws.readyState === WebSocket.OPEN) {
+              if (ws.readyState === WebSocket.OPEN && !stopSentRef.current) {
+                stopSentRef.current = true
                 ws.send(JSON.stringify({
                   header: {
                     message_id: generateId(),
@@ -157,19 +169,32 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
       }
       ws.onclose = (closeEvent) => {
         console.log(`[段${segmentIndex + 1}] WebSocket关闭: 码=${closeEvent.code}, 原因="${closeEvent.reason}", 已识别文本="${segmentFullText}"`)
+        currentWsRef.current = null
         clearTimeout(timeoutId)
         if (!isDone) safeResolve(segmentFullText)
       }
     })
   }
 
-  /** 发送一段PCM数据到WebSocket（分块发送+实时速率控制） */
+  /** 发送一段PCM数据到WebSocket（分块发送+实时速率控制，支持暂停/继续） */
   async function sendSegmentData(ws: WebSocket, pcmData: Float32Array): Promise<void> {
     const totalChunks = Math.ceil(pcmData.length / CHUNK_SIZE)
 
     for (let i = 0; i < totalChunks; i++) {
-      if (abortRef.current) throw new Error('识别已取消')
-      if (ws.readyState !== WebSocket.OPEN) throw new Error('WebSocket已断开')
+      if (abortRef.current) return
+      if (ws.readyState !== WebSocket.OPEN) return
+
+      // 检查是否暂停——暂停时等待，不退出循环
+      if (isPausedRef.current) {
+        console.log(`[发送] 暂停等待中...已发送 ${i}/${totalChunks} 块`)
+        await new Promise<void>(resolve => {
+          pauseResolveRef.current = resolve
+        })
+        pauseResolveRef.current = null
+        console.log(`[发送] 继续发送，从第 ${i + 1}/${totalChunks} 块`)
+      }
+      if (abortRef.current) return
+      if (ws.readyState !== WebSocket.OPEN) return
 
       const start = i * CHUNK_SIZE
       const end = Math.min(start + CHUNK_SIZE, pcmData.length)
@@ -189,6 +214,36 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
     }
   }
 
+  const handlePause = () => {
+    isPausedRef.current = true
+    setIsPaused(true)
+    setProgress('已暂停')
+    // 不发送 StopRecognition，不关闭 WS，只暂停发送循环
+  }
+
+  const handleResume = () => {
+    isPausedRef.current = false
+    setIsPaused(false)
+    if (pauseResolveRef.current) {
+      pauseResolveRef.current()
+      pauseResolveRef.current = null
+    }
+  }
+
+  const handleStop = () => {
+    abortRef.current = true
+    isPausedRef.current = false
+    setIsPaused(false)
+    if (pauseResolveRef.current) {
+      pauseResolveRef.current()
+      pauseResolveRef.current = null
+    }
+    setProgress('识别已停止')
+    setRealtimeText('')
+    setIsUploading(false)
+    if (inputRef.current) inputRef.current.value = ''
+  }
+
   // ---- 主入口 ----
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -203,6 +258,8 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
     setIsUploading(true)
     setProgress('正在准备识别...')
     setRealtimeText('')
+    setIsPaused(false)
+    isPausedRef.current = false
     abortRef.current = false
 
     let audioContext: AudioContext | null = null
@@ -248,16 +305,8 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
         setRealtimeText('') // 清空上一段的实时文字
 
         // 复用第1段获取的Token（阿里云Token有效期10分钟，足够覆盖全部分段）
-        let segToken: string
-        let segAppKey: string
-        if (segIdx === 0) {
-          segToken = tokenData.token
-          segAppKey = tokenData.appKey
-        } else {
-          // 如果Token失效才重新获取（通常不需要）
-          segToken = tokenData.token
-          segAppKey = tokenData.appKey
-        }
+        const segToken = tokenData.token
+        const segAppKey = tokenData.appKey
 
         console.log(`开始识别第 ${segIdx + 1}/${totalSegments} 段 (${segIdx * SEGMENT_DURATION}s - ${Math.min((segIdx + 1) * SEGMENT_DURATION, totalSeconds)}s)`)
 
@@ -380,6 +429,40 @@ export default function AudioUploader({ onTranscript, disabled }: AudioUploaderP
             </>
           )}
         </label>
+        {/* 暂停/继续/停止按钮（识别过程中显示）*/}
+        {isUploading && (
+          <>
+            {isPaused ? (
+              <button
+                onClick={handleResume}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-green-100 text-green-700 border border-green-200 hover:bg-green-200 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <polygon points="6,4 20,12 6,20" />
+                </svg>
+                继续
+              </button>
+            ) : (
+              <button
+                onClick={handlePause}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="6" y="4" width="4" height="16" rx="1" />
+                  <rect x="14" y="4" width="4" height="16" rx="1" />
+                </svg>
+                暂停
+              </button>
+            )}
+            <button
+              onClick={handleStop}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-red-100 text-red-700 border border-red-200 hover:bg-red-200 transition-colors"
+            >
+              <span className="w-2 h-2 bg-red-500 rounded-full" />
+              停止
+            </button>
+          </>
+        )}
       </div>
       {isUploading && realtimeText && (
         <div className="max-w-md text-xs text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-200">

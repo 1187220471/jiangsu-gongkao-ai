@@ -9,24 +9,16 @@ interface VoiceInputProps {
   onRecordingChange?: (recording: boolean) => void
 }
 
-// 检测浏览器是否支持Web Speech API
 /**
  * 计算增量文本：阿里云语音识别返回的文本可能包含对前面内容的修正，
  * 不能简单用 startsWith，需要用最长公共后缀找到真正的增量部分。
- * 
- * 例如：
- *   last = "各位居民朋友们你们好我是此次负责老旧威房改造的"
- *   current = "各位居民朋友们你们好我是此次负责老旧危房改造的负责人"
- *   返回："负责人"（而不是整段新文本）
  */
 function getIncrementalText(last: string, current: string): string {
   if (!last) return current
   if (current === last) return ''
-  
-  // 找最长公共后缀（从末尾往前匹配）
+
   let commonLen = 0
   const minLen = Math.min(last.length, current.length)
-  // 从后往前比较，找到最长的匹配后缀
   for (let i = 1; i <= minLen; i++) {
     if (last[last.length - i] === current[current.length - i]) {
       commonLen++
@@ -34,40 +26,26 @@ function getIncrementalText(last: string, current: string): string {
       break
     }
   }
-  
-  // 如果公共后缀足够长（至少2个字符），认为current是在last基础上修正+追加
+
   if (commonLen >= 2) {
-    // current 中新增的部分 = 去掉和 last 前缀重叠的部分
-    // 找到 last 中匹配后缀的起始位置
     const lastPrefix = last.slice(0, last.length - commonLen)
     const currentPrefix = current.slice(0, current.length - commonLen)
-    
-    // 如果 current 的前缀以 last 的前缀开头，说明只是后面追加了内容
     if (currentPrefix.startsWith(lastPrefix)) {
       return current.slice(lastPrefix.length)
     }
-    
-    // 否则是中间有修正，返回 current 中不在 last 中的部分
-    // 简单处理：返回 current 从 last.length - commonLen 开始的部分
     return current.slice(Math.max(0, last.length - commonLen))
   }
-  
-  // 如果没有足够长的公共后缀，退化为 startsWith 检查
+
   if (current.startsWith(last)) {
     return current.slice(last.length)
   }
-  
-  // 完全不相干，返回整段（这种情况理论上不应发生）
+
   return current
 }
 
-const isBrowserSpeechSupported = () => {
-  return typeof window !== 'undefined' && 
-    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
-}
-
 export default function VoiceInput({ onTranscript, disabled, onRecordingChange }: VoiceInputProps) {
-  const [isRecording, setIsRecording] = useState(false)
+  // 录音状态：idle / recording / paused
+  const [recordingState, setRecordingState] = useState<'idle' | 'recording' | 'paused'>('idle')
   const [transcript, setTranscript] = useState('')
   const [error, setError] = useState('')
   const [engine, setEngine] = useState<'aliyun' | 'browser'>('aliyun')
@@ -76,59 +54,60 @@ export default function VoiceInput({ onTranscript, disabled, onRecordingChange }
   // Refs
   const recognitionRef = useRef<any>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
+  const pauseStartRef = useRef<number>(0)    // 暂停开始时间，用于计算暂停时长
+  const totalPauseRef = useRef<number>(0)    // 累计暂停时长
   const startTimeRef = useRef<number>(0)
   const wsRef = useRef<WebSocket | null>(null)
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const processorRef = useRef<ScriptProcessorNode | null>(null)
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)  // 保存 MediaStream 以便暂停后恢复
   const fullTextRef = useRef<string>('')
-  const lastTextRef = useRef<string>('') // 阿里云上次返回的完整文本，用于算增量
+  const lastTextRef = useRef<string>('')
+  // 暂停/恢复时需要跨会话累积文本
+  const accumulatedTextRef = useRef<string>('')
+  // 是否正在主动暂停（区分"用户点暂停"和"阿里云 WS 自动 close"）
+  const pausingRef = useRef<boolean>(false)
+  // 录音状态 ref（供 WS 回调使用，避免闭包陈旧值）
+  const recordingStateRef = useRef<'idle' | 'recording' | 'paused'>('idle')
 
-  // 6分钟超时
+  // 同步 state → ref
+  useEffect(() => {
+    recordingStateRef.current = recordingState
+  }, [recordingState])
+
   const MAX_DURATION = 6 * 60 * 1000
 
-  // 清理函数
+  // ==================== 清理 ====================
   const cleanup = useCallback(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current)
       timerRef.current = null
     }
     if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop()
-      } catch (e) {}
+      try { recognitionRef.current.stop() } catch (e) {}
       recognitionRef.current = null
     }
     if (wsRef.current) {
-      try {
-        wsRef.current.close()
-      } catch (e) {}
+      try { wsRef.current.close() } catch (e) {}
       wsRef.current = null
     }
-    if (mediaRecorderRef.current) {
-      try {
-        mediaRecorderRef.current.stop()
-      } catch (e) {}
-      mediaRecorderRef.current = null
-    }
     if (processorRef.current) {
-      try {
-        processorRef.current.disconnect()
-      } catch (e) {}
+      try { processorRef.current.disconnect() } catch (e) {}
       processorRef.current = null
     }
     if (sourceRef.current) {
-      try {
-        sourceRef.current.disconnect()
-      } catch (e) {}
+      try { sourceRef.current.disconnect() } catch (e) {}
       sourceRef.current = null
     }
     if (audioContextRef.current) {
-      try {
-        audioContextRef.current.close()
-      } catch (e) {}
+      try { audioContextRef.current.close() } catch (e) {}
       audioContextRef.current = null
+    }
+    // 停止 MediaStream 的所有轨道，释放麦克风
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop())
+      streamRef.current = null
     }
   }, [])
 
@@ -136,68 +115,64 @@ export default function VoiceInput({ onTranscript, disabled, onRecordingChange }
     return cleanup
   }, [cleanup])
 
-  // 录音状态变化时通知父组件
+  // 通知父组件录音状态
   useEffect(() => {
-    onRecordingChange?.(isRecording)
-  }, [isRecording, onRecordingChange])
+    onRecordingChange?.(recordingState === 'recording')
+  }, [recordingState, onRecordingChange])
 
-  // 开始阿里云录音
-  const startAliyunRecording = useCallback(async () => {
+  // ==================== 阿里云 ====================
+  const startAliyunRecording = useCallback(async (isResume: boolean = false) => {
     try {
       setError('')
 
-      // 1. 获取Token
+      // 获取 Token
       const tokenRes = await fetch('/api/voice/aliyun-token', {
         headers: getAuthHeaders(),
       })
       const tokenData = await tokenRes.json()
-
       if (!tokenData.token) {
         setError('获取语音识别Token失败')
         return
       }
 
-      // 2. 获取麦克风权限（指定PCM格式参数）
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: 16000,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-        }
-      })
+      // 获取麦克风（暂停恢复时复用已有 stream；新开始才申请）
+      let stream = streamRef.current
+      if (!stream || !stream.active) {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+          }
+        })
+        streamRef.current = stream
+      }
 
-      // 3. 创建音频上下文和处理节点
       const audioContext = new AudioContext({ sampleRate: 16000 })
       const source = audioContext.createMediaStreamSource(stream)
       const processor = audioContext.createScriptProcessor(4096, 1, 1)
 
-      // 4. 连接阿里云WebSocket
       const wsUrl = `wss://nls-gateway.cn-shanghai.aliyuncs.com/ws/v1?token=${tokenData.token}`
       const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
+      if (!isResume) {
+        accumulatedTextRef.current = ''
+      }
       fullTextRef.current = ''
       lastTextRef.current = ''
 
       ws.onopen = () => {
-        console.log('阿里云WebSocket连接成功')
-
-        // 生成符合阿里云要求的ID（32位十六进制字符串，不带横线）
-        const generateId = () => {
-          return Array.from({length: 32}, () => 
+        const generateId = () =>
+          Array.from({ length: 32 }, () =>
             Math.floor(Math.random() * 16).toString(16)
           ).join('')
-        }
 
-        const messageId = generateId()
-        const taskId = generateId()
-
-        // 发送开始识别指令
         const startCmd = {
           header: {
-            message_id: messageId,
-            task_id: taskId,
+            message_id: generateId(),
+            task_id: generateId(),
             namespace: 'SpeechRecognizer',
             name: 'StartRecognition',
             appkey: tokenData.appKey,
@@ -212,11 +187,9 @@ export default function VoiceInput({ onTranscript, disabled, onRecordingChange }
         }
         ws.send(JSON.stringify(startCmd))
 
-        // 开始录音 - 使用ScriptProcessor获取PCM数据
         processor.onaudioprocess = (e) => {
           if (ws.readyState === WebSocket.OPEN) {
             const inputData = e.inputBuffer.getChannelData(0)
-            // 将Float32转换为Int16
             const int16Data = new Int16Array(inputData.length)
             for (let i = 0; i < inputData.length; i++) {
               const s = Math.max(-1, Math.min(1, inputData[i]))
@@ -226,7 +199,6 @@ export default function VoiceInput({ onTranscript, disabled, onRecordingChange }
           }
         }
 
-        // 保存引用以便清理
         sourceRef.current = source
         processorRef.current = processor
         audioContextRef.current = audioContext
@@ -234,15 +206,21 @@ export default function VoiceInput({ onTranscript, disabled, onRecordingChange }
         source.connect(processor)
         processor.connect(audioContext.destination)
 
-        setIsRecording(true)
-        startTimeRef.current = Date.now()
-        setElapsedTime(0)
+        setRecordingState('recording')
+        if (!isResume) {
+          startTimeRef.current = Date.now()
+          totalPauseRef.current = 0
+          setElapsedTime(0)
+        } else {
+          // 恢复：从暂停中扣除的时间重新开始计时
+          // startTime 保持不变，totalPause 已累加
+        }
 
-        // 启动定时器
         timerRef.current = setInterval(() => {
-          const elapsed = Math.floor((Date.now() - startTimeRef.current) / 1000)
-          setElapsedTime(elapsed)
-          if (elapsed * 1000 >= MAX_DURATION) {
+          const now = Date.now()
+          const effectiveElapsed = Math.floor((now - startTimeRef.current - totalPauseRef.current) / 1000)
+          setElapsedTime(effectiveElapsed)
+          if (effectiveElapsed * 1000 >= MAX_DURATION) {
             stopRecording()
           }
         }, 1000)
@@ -250,133 +228,119 @@ export default function VoiceInput({ onTranscript, disabled, onRecordingChange }
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data)
-        console.log('阿里云消息:', JSON.stringify(data, null, 2))
-
-        if (data.header?.name === 'RecognitionStarted') {
-          console.log('识别已开始')
-        } else if (data.header?.name === 'RecognitionResultChanged') {
-          // 中间结果 - 仅发送新增部分到父组件（避免重复叠加）
+        if (data.header?.name === 'RecognitionResultChanged') {
           const text = data.payload?.result || ''
           if (text) {
-            // 算增量：阿里云返回的文本可能包含对前面内容的修正，
-            // 用最长公共后缀算法找到真正的增量部分
             const newPart = getIncrementalText(lastTextRef.current, text)
             lastTextRef.current = text
             fullTextRef.current = text
-            setTranscript(text) // 组件内实时预览用完整文本
+            setTranscript(accumulatedTextRef.current + text)
             if (newPart) {
-              onTranscript(newPart) // 父组件用增量文本
+              onTranscript(newPart)
             }
           }
         } else if (data.header?.name === 'RecognitionCompleted') {
-          // 最终结果 - 阿里云可能会有小幅修正，只发修正部分
           const text = data.payload?.result || ''
           if (text) {
             fullTextRef.current = text
           }
-          console.log('识别完成，最终文本:', fullTextRef.current)
-          setTranscript(fullTextRef.current)
-          // 最终结果可能有修正，算差异部分
+          setTranscript(accumulatedTextRef.current + text)
           const correction = getIncrementalText(lastTextRef.current, text)
           if (correction) {
             onTranscript(correction)
           }
         } else if (data.header?.name === 'Error') {
-          console.error('阿里云识别错误:', JSON.stringify(data, null, 2))
           setError(`识别错误: ${data.payload?.message || data.header?.status_message || '未知错误'}`)
           stopRecording()
-        } else {
-          console.log('阿里云其他消息:', data.header?.name)
         }
       }
 
-      ws.onerror = (error) => {
-        console.error('阿里云WebSocket错误:', error)
+      ws.onerror = () => {
         setError('语音识别连接错误')
         stopRecording()
       }
 
       ws.onclose = (event) => {
-        console.log('阿里云WebSocket关闭:', event.code, event.reason)
+        console.log('[VoiceInput] WS closed, code:', event.code, 'state:', recordingStateRef.current, 'pausing:', pausingRef.current)
+        // 主动暂停导致的 close，不处理
+        if (pausingRef.current) {
+          pausingRef.current = false
+          return
+        }
         if (!fullTextRef.current && !transcript) {
           setError(`连接已关闭 (${event.code})，请重试`)
         }
-        stopRecording()
+        // 自动 close（如阿里云分段重连），不停止录音，由上层管理
+        if (recordingStateRef.current === 'recording') {
+          // 不调用 stopRecording()，让录音继续
+          // 阿里云长语音分17段时，每段 WS close 后会自动重连新 WS
+        }
       }
-
-
     } catch (err: any) {
       console.error('启动阿里云录音失败:', err)
       setError(`启动录音失败: ${err.message || '未知错误'}`)
       cleanup()
+      setRecordingState('idle')
     }
-  }, [onTranscript, cleanup])
+  }, [onTranscript, cleanup, transcript])
 
-  // 停止阿里云录音
   const stopAliyunRecording = useCallback(() => {
-    // 防止重复调用
-    if (!isRecording) return
-    
-    // 先断开音频处理，停止发送数据
+    // 断开音频处理
     if (processorRef.current) {
-      try {
-        processorRef.current.disconnect()
-      } catch (e) {}
+      try { processorRef.current.disconnect() } catch (e) {}
       processorRef.current = null
     }
     if (sourceRef.current) {
-      try {
-        sourceRef.current.disconnect()
-      } catch (e) {}
+      try { sourceRef.current.disconnect() } catch (e) {}
       sourceRef.current = null
     }
     if (audioContextRef.current) {
-      try {
-        audioContextRef.current.close()
-      } catch (e) {}
+      try { audioContextRef.current.close() } catch (e) {}
       audioContextRef.current = null
     }
 
-    // 发送停止识别指令，等待最终结果
+    // 发送停止识别并关闭 WS
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      const stopCmd = {
+      wsRef.current.send(JSON.stringify({
         header: {
           message_id: Date.now().toString(),
           task_id: Date.now().toString(),
           namespace: 'SpeechRecognizer',
           name: 'StopRecognition',
         },
-      }
-      wsRef.current.send(JSON.stringify(stopCmd))
-      
-      // 延迟关闭WebSocket，等待RecognitionCompleted消息
+      }))
       setTimeout(() => {
         if (wsRef.current) {
           wsRef.current.close()
           wsRef.current = null
         }
-        // 确保最终结果已传递（仅发送补充部分）
+        // 补发最终文本
         if (fullTextRef.current) {
-          const fallbackText = fullTextRef.current
-          const correction = getIncrementalText(lastTextRef.current, fallbackText)
+          const correction = getIncrementalText(lastTextRef.current, fullTextRef.current)
           if (correction) {
-            console.log('停止录音，补充文本:', correction)
             onTranscript(correction)
           }
         }
-        setIsRecording(false)
-        setElapsedTime(0)
-        fullTextRef.current = ''
+        // 释放麦克风
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(t => t.stop())
+          streamRef.current = null
+        }
       }, 2000)
     } else {
       cleanup()
-      setIsRecording(false)
-      setElapsedTime(0)
     }
-  }, [cleanup, isRecording, onTranscript])
 
-  // 开始浏览器原生录音
-  const startBrowserRecording = useCallback(() => {
+    setRecordingState('idle')
+    setElapsedTime(0)
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+  }, [cleanup, onTranscript])
+
+  // ==================== 浏览器原生 ====================
+  const startBrowserRecording = useCallback((isResume: boolean = false) => {
     setError('')
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -391,14 +355,19 @@ export default function VoiceInput({ onTranscript, disabled, onRecordingChange }
     recognition.lang = 'zh-CN'
 
     recognition.onstart = () => {
-      setIsRecording(true)
-      setError('')
-      setTranscript('')
-      startTimeRef.current = Date.now()
-
+      setRecordingState('recording')
+      if (!isResume) {
+        accumulatedTextRef.current = ''
+        startTimeRef.current = Date.now()
+        totalPauseRef.current = 0
+        setTranscript('')
+        setElapsedTime(0)
+      }
       timerRef.current = setInterval(() => {
-        const elapsed = Date.now() - startTimeRef.current
-        if (elapsed >= MAX_DURATION) {
+        const now = Date.now()
+        const effectiveElapsed = Math.floor((now - startTimeRef.current - totalPauseRef.current) / 1000)
+        setElapsedTime(effectiveElapsed)
+        if (effectiveElapsed * 1000 >= MAX_DURATION) {
           stopRecording()
         }
       }, 1000)
@@ -407,49 +376,43 @@ export default function VoiceInput({ onTranscript, disabled, onRecordingChange }
     recognition.onresult = (event: any) => {
       let finalTranscript = ''
       let interimTranscript = ''
-
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript
+        const t = event.results[i][0].transcript
         if (event.results[i].isFinal) {
-          finalTranscript += transcript
+          finalTranscript += t
         } else {
-          interimTranscript += transcript
+          interimTranscript += t
         }
       }
-
       const displayText = finalTranscript || interimTranscript
-      setTranscript(displayText)
-
+      setTranscript(accumulatedTextRef.current + displayText)
       if (finalTranscript) {
+        accumulatedTextRef.current += finalTranscript
         onTranscript(finalTranscript)
-        setTranscript('')
+        setTranscript(accumulatedTextRef.current)
       }
     }
 
     recognition.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error)
-      if (event.error === 'no-speech') {
-        return
-      }
+      if (event.error === 'no-speech') return
       if (event.error === 'not-allowed') {
         setError('麦克风权限被拒绝，请在浏览器设置中允许使用麦克风')
       } else {
         setError(`语音识别错误: ${event.error}`)
       }
-      setIsRecording(false)
+      setRecordingState('idle')
       cleanup()
     }
 
     recognition.onend = () => {
-      setIsRecording(false)
-      cleanup()
+      // 浏览器引擎的 onend 可能在暂停时触发，不改变状态
+      recognitionRef.current = null
     }
 
     recognitionRef.current = recognition
     recognition.start()
   }, [onTranscript, cleanup])
 
-  // 停止浏览器原生录音
   const stopBrowserRecording = useCallback(() => {
     if (recognitionRef.current) {
       recognitionRef.current.stop()
@@ -462,20 +425,94 @@ export default function VoiceInput({ onTranscript, disabled, onRecordingChange }
     if (transcript) {
       onTranscript(transcript)
     }
-    setIsRecording(false)
+    setRecordingState('idle')
     setTranscript('')
+    setElapsedTime(0)
   }, [transcript, onTranscript])
 
-  // 开始录音
+  // ==================== 暂停 / 继续 ====================
+  const pauseRecording = useCallback(() => {
+    if (recordingState !== 'recording') return
+
+    // 标记主动暂停
+    pausingRef.current = true
+
+    // 保存当前累积文本
+    accumulatedTextRef.current += fullTextRef.current
+    fullTextRef.current = ''
+    lastTextRef.current = ''
+
+    // 停止计时器
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+    pauseStartRef.current = Date.now()
+
+    // 暂停：断开音频链路 + 关闭 WS（不释放 MediaStream）
+    if (processorRef.current) {
+      try { processorRef.current.disconnect() } catch (e) {}
+      processorRef.current = null
+    }
+    if (sourceRef.current) {
+      try { sourceRef.current.disconnect() } catch (e) {}
+      sourceRef.current = null
+    }
+    if (audioContextRef.current) {
+      try { audioContextRef.current.close() } catch (e) {}
+      audioContextRef.current = null
+    }
+
+    if (engine === 'aliyun') {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          header: {
+            message_id: Date.now().toString(),
+            task_id: Date.now().toString(),
+            namespace: 'SpeechRecognizer',
+            name: 'StopRecognition',
+          },
+        }))
+        setTimeout(() => {
+          if (wsRef.current) {
+            wsRef.current.close()
+            wsRef.current = null
+          }
+        }, 1500)
+      }
+    } else {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop()
+        recognitionRef.current = null
+      }
+    }
+
+    setRecordingState('paused')
+  }, [recordingState, engine])
+
+  const resumeRecording = useCallback(() => {
+    if (recordingState !== 'paused') return
+
+    // 累加暂停时长
+    totalPauseRef.current += Date.now() - pauseStartRef.current
+
+    if (engine === 'aliyun') {
+      // 阿里云需要全新 WS 会话（token 可能过期，重新获取）
+      startAliyunRecording(true)
+    } else {
+      startBrowserRecording(true)
+    }
+  }, [recordingState, engine, startAliyunRecording, startBrowserRecording])
+
+  // ==================== 开始 / 停止 ====================
   const startRecording = useCallback(() => {
     if (engine === 'aliyun') {
-      startAliyunRecording()
+      startAliyunRecording(false)
     } else {
-      startBrowserRecording()
+      startBrowserRecording(false)
     }
   }, [engine, startAliyunRecording, startBrowserRecording])
 
-  // 停止录音
   const stopRecording = useCallback(() => {
     if (engine === 'aliyun') {
       stopAliyunRecording()
@@ -484,80 +521,118 @@ export default function VoiceInput({ onTranscript, disabled, onRecordingChange }
     }
   }, [engine, stopAliyunRecording, stopBrowserRecording])
 
-  // 切换引擎
   const toggleEngine = useCallback(() => {
-    if (isRecording) return
+    if (recordingState !== 'idle') return
     setEngine(prev => prev === 'aliyun' ? 'browser' : 'aliyun')
-  }, [isRecording])
+  }, [recordingState])
 
-  // 渲染
+  // ==================== 渲染 ====================
+  const isRecording = recordingState === 'recording'
+  const isPaused = recordingState === 'paused'
+
   return (
     <div className="relative inline-block">
       <div className="inline-flex items-center gap-2">
-      {isRecording && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
-          {/* 录音指示器 */}
-          <div className="flex gap-0.5 items-end h-4">
-            <div className="w-0.5 h-2 bg-red-500 rounded animate-pulse" style={{ animationDuration: '0.5s' }}></div>
-            <div className="w-0.5 h-3 bg-red-500 rounded animate-pulse" style={{ animationDuration: '0.7s' }}></div>
-            <div className="w-0.5 h-1.5 bg-red-500 rounded animate-pulse" style={{ animationDuration: '0.3s' }}></div>
-            <div className="w-0.5 h-2.5 bg-red-500 rounded animate-pulse" style={{ animationDuration: '0.6s' }}></div>
+        {/* 录音中指示器 */}
+        {isRecording && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
+            <div className="flex gap-0.5 items-end h-4">
+              <div className="w-0.5 h-2 bg-red-500 rounded animate-pulse" style={{ animationDuration: '0.5s' }} />
+              <div className="w-0.5 h-3 bg-red-500 rounded animate-pulse" style={{ animationDuration: '0.7s' }} />
+              <div className="w-0.5 h-1.5 bg-red-500 rounded animate-pulse" style={{ animationDuration: '0.3s' }} />
+              <div className="w-0.5 h-2.5 bg-red-500 rounded animate-pulse" style={{ animationDuration: '0.6s' }} />
+            </div>
+            <span className="text-xs text-red-600 font-medium">录音中</span>
+            {elapsedTime > 0 && (
+              <span className="text-xs text-red-500">{elapsedTime}s</span>
+            )}
           </div>
-          <span className="text-xs text-red-600 font-medium">录音中</span>
-          {/* 计时器 */}
-          {elapsedTime > 0 && (
-            <span className="text-xs text-red-500">
-              {elapsedTime}s
-            </span>
-          )}
-        </div>
-      )}
+        )}
 
-      {/* 切换引擎按钮 */}
-      {!disabled && (
-        <button
-          onClick={toggleEngine}
-          disabled={isRecording}
-          className="text-xs px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
-          title="切换语音引擎"
-        >
-          {engine === 'aliyun' ? '阿里云' : '浏览器'}
-        </button>
-      )}
+        {/* 暂停中指示器 */}
+        {isPaused && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg">
+            <span className="text-xs text-amber-600 font-medium">已暂停</span>
+            {elapsedTime > 0 && (
+              <span className="text-xs text-amber-500">{elapsedTime}s</span>
+            )}
+          </div>
+        )}
 
-      {/* 主按钮 */}
-      {!disabled && (
-        <button
-          onClick={isRecording ? stopRecording : startRecording}
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-            isRecording
-              ? 'bg-red-100 text-red-700 border border-red-200 hover:bg-red-150'
-              : 'bg-primary-50 text-primary-700 border border-primary-200 hover:bg-primary-100'
-          }`}
-        >
-          {isRecording ? (
-            <>
-              <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-              结束录音
-            </>
-          ) : (
-            <>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-              </svg>
-              语音答题
-            </>
-          )}
-        </button>
-      )}
+        {/* 切换引擎按钮 */}
+        {!disabled && recordingState === 'idle' && (
+          <button
+            onClick={toggleEngine}
+            className="text-xs px-2 py-1 rounded border border-slate-300 bg-white hover:bg-slate-50"
+            title="切换语音引擎"
+          >
+            {engine === 'aliyun' ? '阿里云' : '浏览器'}
+          </button>
+        )}
 
-      {/* 错误提示 */}
-      {error && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-red-100 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm shadow-lg z-50">
-          {error}
-        </div>
-      )}
-    </div>
+        {/* 主按钮区 */}
+        {!disabled && (
+          <>
+            {/* 暂停按钮（录音中时显示）*/}
+            {isRecording && (
+              <button
+                onClick={pauseRecording}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="6" y="4" width="4" height="16" rx="1" />
+                  <rect x="14" y="4" width="4" height="16" rx="1" />
+                </svg>
+                暂停
+              </button>
+            )}
+
+            {/* 继续按钮（暂停中时显示）*/}
+            {isPaused && (
+              <button
+                onClick={resumeRecording}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-green-100 text-green-700 border border-green-200 hover:bg-green-200 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <polygon points="6,4 20,12 6,20" />
+                </svg>
+                继续
+              </button>
+            )}
+
+            {/* 结束按钮（录音中或暂停中时显示）*/}
+            {(isRecording || isPaused) && (
+              <button
+                onClick={stopRecording}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-red-100 text-red-700 border border-red-200 hover:bg-red-200 transition-colors"
+              >
+                <span className="w-2 h-2 bg-red-500 rounded-full" />
+                结束
+              </button>
+            )}
+
+            {/* 开始按钮（空闲时显示）*/}
+            {recordingState === 'idle' && (
+              <button
+                onClick={startRecording}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary-50 text-primary-700 border border-primary-200 hover:bg-primary-100 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+                语音答题
+              </button>
+            )}
+          </>
+        )}
+
+        {/* 错误提示 */}
+        {error && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-red-100 border border-red-200 text-red-700 px-4 py-2 rounded-lg text-sm shadow-lg z-50">
+            {error}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
