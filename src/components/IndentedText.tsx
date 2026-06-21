@@ -4,6 +4,7 @@ interface IndentedTextProps {
   text: string
   className?: string
   paragraphClassName?: string
+  compact?: boolean
 }
 
 /**
@@ -25,6 +26,7 @@ export default function IndentedText({
   text,
   className = '',
   paragraphClassName = '',
+  compact = false,
 }: IndentedTextProps) {
   const raw = text || ''
   // 按单换行分段：Word/JSON 中段落之间通常只有一个 \n
@@ -44,7 +46,7 @@ export default function IndentedText({
         return (
           <p
             key={idx}
-            className={`mb-4 last:mb-0 ${
+            className={`${compact ? 'mb-1 last:mb-0' : 'mb-4 last:mb-0'} ${
               isTitle
                 ? 'font-medium text-slate-800'
                 : 'indent-8 text-slate-700'

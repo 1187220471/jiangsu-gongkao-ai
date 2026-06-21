@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { getAuthHeaders } from '@/lib/auth'
 import IndentedText from '@/components/IndentedText'
+import ImageUploader from '@/components/ImageUploader'
 
 interface Material {
   materialNum: string
@@ -38,6 +39,17 @@ interface SiblingItem {
   questionType: string
 }
 
+interface EvaluationResult {
+  score: number
+  dimensionScores: Record<string, number>
+  evaluation: string
+  sentenceComments: { sentence: string; comment: string }[]
+  improvedAnswer: string
+  isInvited: boolean
+  recordId: number
+  cost: number
+}
+
 const PROFICIENCY_OPTIONS = [
   { value: 'weak', label: '生疏', emoji: '😰', color: 'border-red-300 bg-red-50 text-red-700' },
   { value: 'okay', label: '一般', emoji: '🙂', color: 'border-yellow-300 bg-yellow-50 text-yellow-700' },
@@ -63,6 +75,13 @@ export default function ShenlunDetailPage() {
   const [bookmarkLoading, setBookmarkLoading] = useState(false)
   const [notesInput, setNotesInput] = useState('')
   const [showNotes, setShowNotes] = useState(false)
+  const [userAnswer, setUserAnswer] = useState('')
+  const [expandedAnswerInput, setExpandedAnswerInput] = useState(false)
+  const [evaluating, setEvaluating] = useState(false)
+  const [evaluationResult, setEvaluationResult] = useState<EvaluationResult | null>(null)
+  const [evaluationError, setEvaluationError] = useState('')
+  const [showReferenceAnswer, setShowReferenceAnswer] = useState(false)
+  const hasAiReferenceAnswer = question?.answers.some(a => a.teacherName === 'AI参考答案')
 
   useEffect(() => {
     const token = localStorage.getItem('token')
@@ -138,6 +157,34 @@ export default function ShenlunDetailPage() {
 
   const navigateTo = (sibId: number) => {
     router.push(`/shenlun/${sibId}`)
+  }
+
+  const handleEvaluate = async () => {
+    if (!userAnswer.trim()) return
+    setEvaluating(true)
+    setEvaluationError('')
+    try {
+      const res = await fetch('/api/shenlun/evaluate', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ questionId: id, userAnswer }),
+      })
+      if (res.status === 401) {
+        router.push('/login')
+        return
+      }
+      const data = await res.json()
+      if (!res.ok) {
+        setEvaluationError(data.error || '批改失败')
+        return
+      }
+      setEvaluationResult(data)
+    } catch (err) {
+      console.error('申论批改失败:', err)
+      setEvaluationError('网络异常，请稍后重试')
+    } finally {
+      setEvaluating(false)
+    }
   }
 
   if (loading) {
@@ -387,6 +434,156 @@ export default function ShenlunDetailPage() {
                   >
                     展开全文
                   </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 我的作答 */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <button
+            onClick={() => setExpandedAnswerInput(!expandedAnswerInput)}
+            className="w-full px-5 py-3 flex items-center justify-between bg-slate-50 hover:bg-slate-100 transition-colors"
+          >
+            <span className="text-sm font-medium text-slate-700">✏️ 我的作答</span>
+            <span className="text-slate-400 text-sm transition-transform" style={{ transform: expandedAnswerInput ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+              ⌄
+            </span>
+          </button>
+
+          {expandedAnswerInput && (
+            <div className="p-5 space-y-4">
+              <textarea
+                value={userAnswer}
+                onChange={(e) => setUserAnswer(e.target.value)}
+                placeholder={`请输入你的答案...\n建议字数：${question.wordLimit || '按题干要求'}`}
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-primary-400"
+                rows={8}
+              />
+              <div className="flex items-center justify-between">
+                <ImageUploader
+                  onRecognized={(text) => {
+                    setUserAnswer(text)
+                    setExpandedAnswerInput(true)
+                  }}
+                  disabled={evaluating}
+                />
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-400">
+                    已输入 {countChars(userAnswer)} 字
+                  </span>
+                  <button
+                    onClick={handleEvaluate}
+                    disabled={evaluating || !userAnswer.trim()}
+                    className="text-sm bg-primary-600 text-white px-5 py-2 rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {evaluating ? (
+                      <>
+                        <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
+                        批改中...
+                      </>
+                    ) : (
+                      <>
+                        AI 批改
+                        {evaluationResult?.isInvited ? (
+                          <span className="text-xs bg-white/20 px-1.5 py-0.5 rounded">邀请用户</span>
+                        ) : (
+                          <span className="text-xs bg-white/20 px-1.5 py-0.5 rounded">{question.questionType === '大作文' ? '2点' : '1点'}</span>
+                        )}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {evaluating && (
+                <div className="bg-slate-50 rounded-lg p-4 text-sm text-slate-600 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-500"></span>
+                    <span className="font-medium text-primary-700">正在阅卷...</span>
+                  </div>
+                  <div className="text-xs text-slate-500">正在识别题型 → 提取材料要点 → 对比用户答案 → 生成评语</div>
+                </div>
+              )}
+
+              {evaluationError && (
+                <div className="bg-red-50 text-red-600 text-sm rounded-lg p-3">
+                  {evaluationError}
+                </div>
+              )}
+
+              {evaluationResult && (
+                <div className="space-y-4 pt-2">
+                  {/* 总分 */}
+                  <div className="flex items-center gap-4 bg-primary-50 rounded-xl p-4">
+                    <div className="text-center">
+                      <div className="text-3xl font-bold text-primary-700">{evaluationResult.score}</div>
+                      <div className="text-xs text-primary-600">/ {question.score || 20} 分</div>
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-slate-700 mb-2">各维度得分</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {Object.entries(evaluationResult.dimensionScores).map(([dim, score]) => (
+                          <div key={dim} className="flex items-center justify-between text-xs bg-white rounded px-2 py-1">
+                            <span className="text-slate-600">{dim}</span>
+                            <span className="font-medium text-primary-700">{score}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 逐句批改 */}
+                  {evaluationResult.sentenceComments.length > 0 && (
+                    <div>
+                      <div className="text-sm font-medium text-slate-700 mb-2">📝 逐句批改</div>
+                      <div className="space-y-2">
+                        {evaluationResult.sentenceComments.slice(0, 6).map((item, idx) => (
+                          <div key={idx} className="text-xs bg-slate-50 rounded-lg p-3">
+                            <div className="text-slate-700 mb-1">「{item.sentence}」</div>
+                            <div className="text-primary-700">{item.comment}</div>
+                          </div>
+                        ))}
+                        {evaluationResult.sentenceComments.length > 6 && (
+                          <div className="text-xs text-slate-400 text-center">还有 {evaluationResult.sentenceComments.length - 6} 条逐句点评</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 点评 */}
+                  <div>
+                    <div className="text-sm font-medium text-slate-700 mb-2">💡 综合点评</div>
+                    <IndentedText
+                      text={evaluationResult.evaluation}
+                      className="text-xs text-slate-600 bg-slate-50 rounded-lg p-3"
+                    />
+                  </div>
+
+                  {/* 参考答案提示 */}
+                  {hasAiReferenceAnswer && (
+                    <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-700">
+                      📖 参考答案已放在上方「名师答案」Tab 中，切换至「AI参考答案」可对照学习。
+                    </div>
+                  )}
+
+                  {/* 改进版答案 */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-sm font-medium text-slate-700">✨ 改进版答案</div>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(evaluationResult.improvedAnswer)}
+                        className="text-xs text-primary-600 hover:text-primary-700"
+                      >
+                        复制
+                      </button>
+                    </div>
+                    <IndentedText
+                      text={evaluationResult.improvedAnswer}
+                      className="text-xs text-slate-700 bg-green-50 rounded-lg p-3 leading-relaxed"
+                    />
+                  </div>
                 </div>
               )}
             </div>

@@ -703,3 +703,276 @@ export async function evaluateAnswer(question: string, referenceAnswer: string, 
 export async function answerQuestion(question: string): Promise<string> {
   return generateReferenceAnswer(question)
 }
+
+export async function generateShenlunReferenceAnswer(
+  questionText: string,
+  materials: ShenlunMaterialInput[],
+  questionType: string,
+  fullScore: number,
+  wordLimit: string | null,
+  referenceAnswers: ShenlunTeacherAnswerInput[]
+): Promise<string> {
+  const materialsText = materials.map(m => `【给定资料${m.materialNum}】\n${m.content}`).join('\n\n')
+  const referenceText = referenceAnswers.map(a => `【${a.teacherName}答案】\n${a.answerText}`).join('\n\n')
+
+  const systemPrompt = `你是一位资深江苏省公务员申论阅卷老师和申论教研专家。请根据题干、给定材料和各位名师的答案，整理出一份高质量的标准参考答案。
+
+【要求】
+1. 严格紧扣给定材料，不脱离材料发挥
+2. 严格参考评分原则，给出一份近乎满分的答案
+3. 各位名师的答案仅供你参考，你可以综合他们的优点，但不要简单拼凑
+4. 必须符合题型要求：
+   - 归纳概括：有总括句，分类合理，关键词齐全，语言凝练
+   - 综合分析：观点明确，分析深入，结构完整
+   - 提出对策：针对性强，具体可行，分条清晰
+   - 贯彻执行：格式正确，内容完整，语言得体
+   - 大作文：立意准确，结构完整，论证充分。
+     - 字数必须严格控制在 900-1100 字，最好落在 1000-1100 字，不能少于 900 字
+     - 分论点必须严格来源于给定材料：优先从题干指定的给定材料中提炼；若该材料不够，再从本套题的其他给定材料中提炼
+     - 论据比例约为 50% 对 50%：约一半论据使用材料中的案例、数据、观点，另一半使用符合江苏省情的现实案例、时政热点、社会现象
+     - 以题干指定的给定材料为核心依据，同时有机结合其他给定材料；严禁脱离材料空发议论
+5. 字数控制必须严格，这是硬性要求：
+   - 若题干要求"XX字左右"，答案字数必须严格控制在 ±10% 以内（如 200字左右 → 180-220字）
+   - 若题干要求"不超过XX字"或"XX字"或"XX字以内"，答案字数必须控制在 90%-100% 之间（如 200字 → 180-200字，400字 → 360-400字）；小题目（≤500字）严格按此执行
+   - 若题干要求"不少于XX字"，答案字数必须达到要求，但不宜超过 120%
+   - 大作文（>500字）：必须充分展开论证，写满接近字数上限，建议分 5-6 段，每段 150-200 字，不能过于简短
+   - 特别注意：如果题干只写"XX字"，必须理解为上限，答案要达到上限的 90% 以上，不能只写 70%-80%
+6. 生成答案后必须自检：如果超过字数上限，立即删除修饰词、合并同类项、压缩表述；如果低于字数下限，补充材料关键词或细化要点，直到合规
+7. 严禁使用 Markdown 格式（如 **、#、- 等），只输出纯文本
+8. 只输出参考答案文本，不要输出任何额外说明`
+
+  let limit = parseWordLimit(wordLimit)
+  // 大作文（>500字）强制按用户最新要求：900-1100字，最好1000-1100字
+  const isEssay = limit && typeof limit.max === 'number' && limit.max > 500
+  if (isEssay) {
+    limit = { min: 900, max: 1100 }
+  }
+  const limitHint = limit
+    ? `目标字数范围：${limit.min ?? 0}-${limit.max ?? '∞'}字`
+    : '绝对不得超过上限'
+  const userPrompt = `【题干】\n${questionText}\n\n【题型】${questionType}\n\n【分值】${fullScore}分\n\n${wordLimit ? `【字数要求】${wordLimit}（${limitHint}，这是硬性要求）\n\n` : ''}【给定材料】\n${materialsText}\n\n【参考名师答案】\n${referenceText}\n\n请生成标准参考答案。生成后请自检字数，确保严格落在目标字数范围内。`
+
+  const response = await callAI([
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ], 0.3)
+
+  let answer = response.trim()
+
+  // 清理可能的尾部字数说明
+  answer = answer.replace(/\s*（字数[：:][\s\S]*?）\s*$/, '').replace(/\s*\(字数[：:][\s\S]*?\)\s*$/, '').trim()
+
+  // 字数校准：超长压缩，过短扩展，循环直到合规
+  if (limit) {
+    for (let i = 0; i < 3; i++) {
+      const currentChars = answer.length
+      const maxChars = typeof limit.max === 'number' ? limit.max : 0
+      const minChars = typeof limit.min === 'number' ? limit.min : 0
+      const tooLong = maxChars > 0 && currentChars > maxChars
+      const tooShort = minChars > 0 && currentChars < minChars
+      if (!tooLong && !tooShort) break
+
+      if (tooLong) {
+        answer = await compressAnswer(answer, wordLimit || '', maxChars)
+      } else if (tooShort) {
+        answer = await expandAnswer(answer, questionText, materialsText, wordLimit || '', minChars)
+      }
+    }
+  }
+
+  return answer
+}
+
+function parseWordLimit(wordLimit: string | null): { min?: number; max?: number } | null {
+  if (!wordLimit) return null
+  const text = wordLimit.replace(/\s/g, '')
+
+  // 350字左右
+  const aroundMatch = text.match(/(\d+)字左右/)
+  if (aroundMatch) {
+    const n = parseInt(aroundMatch[1])
+    return { min: Math.round(n * 0.9), max: Math.round(n * 1.1) }
+  }
+
+  // 不超过350字 / 350字以内
+  const atMostMatch = text.match(/(?:不超过|控制在|限于|限制在|少于)(\d+)字/) || text.match(/(\d+)字以内/)
+  if (atMostMatch) {
+    const n = parseInt(atMostMatch[1])
+    return { min: Math.round(n * 0.9), max: n }
+  }
+
+  // 纯数字+字（申论真题常见表述）：
+  // - 小题目（≤500字）按"不超过X字"处理：200字 → 180-200字
+  // - 大作文（>500字）按"X字左右"偏下限处理：1000字 → 800-1000字
+  const plainMatch = text.match(/^(\d+)字$/)
+  if (plainMatch) {
+    const n = parseInt(plainMatch[1])
+    return n > 500
+      ? { min: Math.round(n * 0.8), max: n }
+      : { min: Math.round(n * 0.9), max: n }
+  }
+
+  // 不少于350字
+  const atLeastMatch = text.match(/(?:不少于|至少|多于)(\d+)字/)
+  if (atLeastMatch) {
+    return { min: parseInt(atLeastMatch[1]) }
+  }
+
+  // 300-500字
+  const rangeMatch = text.match(/(\d+)[\-~～到](\d+)字/)
+  if (rangeMatch) {
+    return { min: parseInt(rangeMatch[1]), max: parseInt(rangeMatch[2]) }
+  }
+
+  return null
+}
+
+async function compressAnswer(answer: string, wordLimit: string, maxChars: number): Promise<string> {
+  const systemPrompt = `你是一位申论答案压缩专家。请在保持答案完整性、结构性和要点齐全的前提下，将以下答案压缩到指定字数以内。只输出压缩后的文本，不要输出任何说明。`
+  const userPrompt = `【字数要求】${wordLimit}，当前 ${answer.length} 字，请压缩到 ${maxChars} 字以内。\n\n${answer}\n\n请输出压缩后的答案。`
+
+  const response = await callAI([
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ], 0.2)
+
+  let compressed = response.trim()
+  // 如果仍然超长，简单截断（保留完整性优先）
+  if (compressed.length > maxChars) {
+    compressed = compressed.slice(0, maxChars)
+  }
+  return compressed
+}
+
+async function expandAnswer(answer: string, questionText: string, materialsText: string, wordLimit: string, minChars: number): Promise<string> {
+  const systemPrompt = `你是一位申论答案扩展专家。请在保持答案原有结构、要点和逻辑的基础上，结合题干和给定材料，补充具体论据、细化分析、增加材料关键词，使答案达到指定字数下限。不要添加无关内容，不要改变原意。只输出扩展后的文本，不要输出任何说明。`
+  const userPrompt = `【题干】\n${questionText}\n\n【字数要求】${wordLimit}，当前 ${answer.length} 字，必须扩展到至少 ${minChars} 字。\n\n【给定材料】\n${materialsText}\n\n【当前答案】\n${answer}\n\n请输出扩展后的答案，确保字数不少于 ${minChars} 字。`
+
+  const response = await callAI([
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ], 0.2)
+
+  return response.trim()
+}
+
+export interface ShenlunMaterialInput {
+  materialNum: string
+  content: string
+}
+
+export interface ShenlunTeacherAnswerInput {
+  teacherName: string
+  answerText: string
+}
+
+export interface ShenlunEvaluationResult {
+  score: number
+  dimensionScores: Record<string, number>
+  sentenceComments: { sentence: string; comment: string }[]
+  evaluation: string
+  improvedAnswer: string
+}
+
+export async function evaluateShenlunAnswer(
+  questionText: string,
+  materials: ShenlunMaterialInput[],
+  questionType: string,
+  fullScore: number,
+  wordLimit: string | null,
+  referenceAnswer: string,
+  referenceAnswers: ShenlunTeacherAnswerInput[],
+  userAnswer: string
+): Promise<ShenlunEvaluationResult> {
+  const materialsText = materials.map(m => `【给定资料${m.materialNum}】\n${m.content}`).join('\n\n')
+  const referenceText = referenceAnswers.map(a => `【${a.teacherName}答案】\n${a.answerText}`).join('\n\n')
+
+  const systemPrompt = `你是一位资深江苏省公务员申论阅卷老师，熟悉江苏省考申论评分标准。请严格按照以下流程批改用户答案：
+
+【工作流】
+1. 题型判定：根据题干和问法判断题型（归纳概括/综合分析/提出对策/贯彻执行/大作文）
+2. 提取要点：从给定材料中提取标准得分点/关键词
+3. 逐条对比：将用户答案与标准要点逐条对比，判断覆盖情况
+4. 输出结果：按指定 JSON 格式输出评分、逐句批改、点评和改进版
+
+【评分维度与权重】
+- 要点完整性（占60-70%）：是否覆盖材料中的关键得分点，按"踩点给分"原则评分
+- 结构规范（占15-20%）：是否有总括句、分条/分段是否清晰、逻辑层次是否合理
+- 语言表达（占10-15%）：是否凝练、规范、不口语化，是否照抄材料过多
+- 字数控制（占约5%）：是否符合题干字数要求
+
+【各题型具体评分重点】
+- 归纳概括：分类逻辑、总括句质量、关键词覆盖、语言凝练
+- 综合分析/观点分析：观点鲜明、分析角度齐全、论证有力、材料运用
+- 提出对策：针对性、可行性、是否直接/间接对策混淆、具体可操作
+- 贯彻执行/公文写作：格式正确、内容完整、语言得体、身份场景适配
+- 大作文：立意准确、分论点齐全、论证充分、材料运用、结构完整
+
+【输出要求】
+必须输出合法 JSON，格式如下：
+{
+  "score": 数字,
+  "dimensionScores": {
+    "要点完整性": 数字,
+    "结构规范": 数字,
+    "语言表达": 数字,
+    "字数控制": 数字
+  },
+  "sentenceComments": [
+    { "sentence": "用户答案中的原句", "comment": "这句的批改意见" }
+  ],
+  "evaluation": "整体点评，分优点、不足、漏点三部分",
+  "improvedAnswer": "基于用户答案逻辑优化后的改进版"
+}
+
+【重要规则】
+1. 总分必须是 0-${fullScore} 之间的整数
+2. 各维度得分加起来应等于或接近总分
+3. 要点完整性维度扣分要克制，有小遗漏但方向正确不大幅扣分
+4. 改进版答案必须基于用户原有逻辑，不强制重写为标准答案
+5. 改进版答案要尽量符合字数要求
+6. 点评要具体、建设性，优点和不足都要写
+7. 逐句批改时，如果指出用户缺少某个要点或表述不够准确，必须引用该要点在材料中的原文作为依据，格式为「材料原文：……」
+8. 不要输出 JSON 之外的任何文字`
+
+  const userPrompt = `【题干】\n${questionText}\n\n【题型】${questionType}\n\n【分值】${fullScore}分\n\n${wordLimit ? `【字数要求】${wordLimit}\n\n` : ''}【给定材料】\n${materialsText}\n\n【标准参考答案】\n${referenceAnswer}\n\n【参考名师答案】\n${referenceText}\n\n【用户答案】\n${userAnswer}\n\n请按工作流批改，以标准参考答案为评分依据，输出 JSON 格式结果。`
+
+  const response = await callAI([
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ], 0.4)
+
+  try {
+    const jsonMatch = response.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) throw new Error('No JSON found')
+    const result = JSON.parse(jsonMatch[0])
+
+    const dimensionScores: Record<string, number> = result.dimensionScores || {
+      '要点完整性': Math.round(fullScore * 0.65),
+      '结构规范': Math.round(fullScore * 0.18),
+      '语言表达': Math.round(fullScore * 0.12),
+      '字数控制': Math.round(fullScore * 0.05),
+    }
+
+    return {
+      score: Math.min(fullScore, Math.max(0, Math.round(result.score))),
+      dimensionScores,
+      sentenceComments: Array.isArray(result.sentenceComments) ? result.sentenceComments : [],
+      evaluation: result.evaluation || '批改完成',
+      improvedAnswer: result.improvedAnswer || '改进版答案生成中...',
+    }
+  } catch {
+    return {
+      score: 0,
+      dimensionScores: {
+        '要点完整性': 0,
+        '结构规范': 0,
+        '语言表达': 0,
+        '字数控制': 0,
+      },
+      sentenceComments: [],
+      evaluation: `批改过程出现异常，原始返回如下：\n\n${response}`,
+      improvedAnswer: '生成失败',
+    }
+  }
+}

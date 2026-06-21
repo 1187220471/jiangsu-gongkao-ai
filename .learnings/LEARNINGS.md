@@ -279,3 +279,143 @@ if (!JWT_SECRET) {
 - Last-Seen: 2026-06-07
 
 ---
+
+## [LRN-20260607-005] correction
+
+**Logged**: 2026-06-07T15:53:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+修复同类问题时，必须全局搜索所有相关文件，不能只修当前报错的文件。同一 bug 模式可能在多个文件中重复出现。
+
+### Details
+用户报告真题复盘详情页（`zhenti/[id]/page.tsx`）一直显示"加载中"。我修复了该文件中的 `setLoading(false)` 未在 `finally` 块执行的问题。
+
+但此前第二轮修复（commit `eb76cde`）已经修复过**列表页**（`zhenti/page.tsx`）的同样问题，却**漏修了详情页**。这说明我在修复时没有全局搜索所有使用 `setLoading` 的文件，导致同一 bug 模式在另一个文件中继续存在。
+
+### Suggested Action
+1. 修复某类 bug 时，使用 `grep` 全局搜索相同模式（如 `setLoading(false)` 的使用方式）
+2. 检查所有匹配的文件，确保同类问题全部修复
+3. 建立 bug 修复检查清单："是否在其他文件有同样问题？"
+
+### Metadata
+- Source: error
+- Related Files: src/app/zhenti/page.tsx, src/app/zhenti/[id]/page.tsx
+- Tags: react, state-management, error-handling, loading-state, pattern-matching
+- Pattern-Key: harden.fix-all-occurrences
+- Recurrence-Count: 1
+- First-Seen: 2026-06-07
+- Last-Seen: 2026-06-07
+- See Also: LRN-20260607-003
+
+---
+
+## [LRN-20260607-006] correction
+
+**Logged**: 2026-06-07T15:53:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: backend
+
+### Summary
+修改 seed 脚本中的图片 URL 时，必须严格核对题目 ID 和内容，不能凭假设修改。错误的修改会导致有图片的题目丢失图片，或无图片的题目显示空白占位。
+
+### Details
+用户报告 ID 145（2025-03-09 A类 Q1，自带水杯活动题）错误显示了空白图片占位。我排查后发现 `seed-zhenti-images.ts` 中该题的 `imageUrl` 被错误地标记为 `/zhenti-images/image_0.png`。
+
+但在修复过程中，我**错误地假设** 2022-07-09 A类Q1 和 B类Q1 也没有图片，将它们的 `imageUrl` 也改成了 `null`。用户纠正后才知道这两道题**确实有图片**（就是 image_0.png）。
+
+这个错误的原因是：
+1. 我没有先查看数据库中这些题目的实际 imageUrl 值
+2. 看到 `image_0.png` 这个通用文件名就假设是占位符
+3. 没有核对题目内容（2022-07-09 的题是漫画题，应该有图片）
+
+### Suggested Action
+1. 修改数据前，先查询数据库确认当前值
+2. 对于图片题，查看题目内容判断是否真的需要图片
+3. 修改 seed 脚本时，逐条核对题目 ID、日期、类别、题号
+4. 批量修改前先备份原始数据
+
+### Metadata
+- Source: error
+- Related Files: prisma/seed-zhenti-images.ts
+- Tags: data-integrity, image-url, seed-script, assumption-bias
+- Pattern-Key: harden.verify-before-modify
+- Recurrence-Count: 1
+- First-Seen: 2026-06-07
+- Last-Seen: 2026-06-07
+
+---
+
+## [LRN-20260607-007] correction
+
+**Logged**: 2026-06-07T15:53:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: frontend
+
+### Summary
+前端代码渲染后端返回的数据时，不能假设数据结构完全一致。不同数据批次可能使用不同的字段名或类型，必须做兼容性处理。
+
+### Details
+ID 196（2026-03-15 A类 Q1）的 comparison 数据结构与标准格式不一致：
+- 标准格式：`pros: string[]`, `cons: string[]`, `summary: string`
+- ID 196 实际：`strengths: string`, `weaknesses: string`（无 summary）
+
+前端代码硬编码了 `item.pros.map()` 和 `item.cons.map()`，当 ID 196 的数据没有 `pros`/`cons` 字段时，在 `undefined` 上调用 `map` 直接崩溃，导致"Application error: a client-side exception"。
+
+### Suggested Action
+1. 渲染后端数据时，始终使用可选链和默认值：`item.pros?.map(...)` 或 `(item.pros || []).map(...)`
+2. 扩展 TypeScript 接口以兼容不同数据格式
+3. 对于关键渲染路径，添加数据结构校验或 try-catch
+4. 数据入库时尽量统一格式，避免同一字段有多种形态
+
+### Metadata
+- Source: error
+- Related Files: src/app/zhenti/[id]/page.tsx
+- Tags: typescript, data-structure, compatibility, defensive-programming
+- Pattern-Key: harden.data-structure-compatibility
+- Recurrence-Count: 1
+- First-Seen: 2026-06-07
+- Last-Seen: 2026-06-07
+
+---
+
+## [LRN-20260607-008] insight
+
+**Logged**: 2026-06-07T15:53:00+08:00
+**Priority**: medium
+**Status**: resolved
+**Area**: backend
+
+### Summary
+批量数据修复操作可能产生副作用，影响其他记录。执行前应先评估影响范围，修复后验证相邻数据。
+
+### Details
+今天连续修复了 5 道真题的图片问题：
+1. ID 145 - imageUrl 错误标记为图片（实际无图）
+2. ID 196 - comparison 数据结构不兼容
+3. ID 202 - 图片被错误替换
+4. ID 204 - 图片丢失（之前能正常显示）
+5. ID 201 - 图片丢失（之前能正常显示）
+
+ID 204 和 ID 201 的图片"之前是正确加载的，现在又看不到了"，说明之前的某次数据修复操作（可能是 seed 脚本重新运行或批量更新）产生了副作用，把原本正确的 imageUrl 覆盖成了 null。
+
+### Suggested Action
+1. 批量数据修复前，先导出受影响范围的数据做备份
+2. 修复后抽查相邻记录，确认无副作用
+3. 对于 seed 脚本，使用 upsert 或条件更新，避免覆盖已有正确数据
+4. 建立数据变更日志，追踪每次修改的记录和字段
+
+### Metadata
+- Source: insight
+- Related Files: prisma/seed-zhenti-images.ts
+- Tags: data-migration, side-effects, backup, verification
+- Pattern-Key: best_practice.batch-change-safety
+- Recurrence-Count: 1
+- First-Seen: 2026-06-07
+- Last-Seen: 2026-06-07
+
+---

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { getAuthHeaders } from '@/lib/auth'
+import IndentedText from '@/components/IndentedText'
 
 interface ComparisonItem {
   answer_id: number
@@ -358,9 +359,10 @@ export default function ZhentiDetailPage() {
                 </div>
                 <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">AI三答融合精华版</span>
               </div>
-              <div className="text-slate-700 leading-loose whitespace-pre-wrap text-sm">
-                {question.finalAnswer}
-              </div>
+              <IndentedText
+                text={question.finalAnswer}
+                className="text-slate-700 leading-loose text-sm"
+              />
             </div>
           )}
 
@@ -504,8 +506,11 @@ export default function ZhentiDetailPage() {
                             </div>
                           )}
                           {/* 答案原文 */}
-                          <div className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap bg-white rounded-lg p-3 border border-slate-200">
-                            {a.content}
+                          <div className="bg-white rounded-lg p-3 border border-slate-200">
+                            <IndentedText
+                              text={a.content}
+                              className="text-xs text-slate-600 leading-relaxed"
+                            />
                           </div>
                         </div>
                       )}

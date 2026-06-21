@@ -27,8 +27,10 @@ export async function GET(
           select: { materialNum: true, content: true },
         },
         answers: {
-          orderBy: { answerOrder: 'asc' },
-          select: { teacherName: true, answerText: true },
+          orderBy: [
+            { answerOrder: 'asc' },
+          ],
+          select: { id: true, teacherName: true, answerText: true, answerOrder: true },
         },
       },
     })
@@ -49,8 +51,18 @@ export async function GET(
       }),
     ])
 
+    // 让 AI参考答案 排在最前面
+    const sortedAnswers = [...question.answers].sort((a, b) => {
+      if (a.teacherName === 'AI参考答案' && b.teacherName !== 'AI参考答案') return -1
+      if (a.teacherName !== 'AI参考答案' && b.teacherName === 'AI参考答案') return 1
+      return (a.answerOrder ?? 0) - (b.answerOrder ?? 0)
+    })
+
     return NextResponse.json({
-      question,
+      question: {
+        ...question,
+        answers: sortedAnswers,
+      },
       bookmark: bookmark
         ? { proficiency: bookmark.proficiency, notes: bookmark.notes }
         : null,
