@@ -222,11 +222,11 @@ export default function ShenlunDetailPage() {
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => router.push('/')}
+              onClick={() => router.push('/shenlun')}
               className="flex items-center gap-1 text-sm text-slate-500 hover:text-primary-600 transition-colors"
             >
               <span>←</span>
-              <span>首页</span>
+              <span>申论真题</span>
             </button>
             <div className="w-px h-4 bg-slate-200" />
             <button

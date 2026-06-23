@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: '江苏公务员面试答题训练',
+  title: '江苏公考AI智能训练网站',
   description: '江苏省公务员面试AI智能训练平台',
 }
 

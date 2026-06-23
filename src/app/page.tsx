@@ -79,14 +79,47 @@ export default function Home() {
     )
   }
 
+  const modules = [
+    {
+      title: '公考面试训练',
+      subtitle: '结构化面试 / 真题模拟 / AI智能批改',
+      icon: '🎤',
+      color: 'from-blue-500 to-blue-600',
+      hoverColor: 'hover:from-blue-600 hover:to-blue-700',
+      route: '/interview',
+      features: ['随机出题', '语音答题', 'AI批改', '真题参考'],
+      stats: '2008-2026 真题',
+    },
+    {
+      title: '公考申论训练',
+      subtitle: '材料分析 / 写作训练 / 名师答案对比',
+      icon: '📝',
+      color: 'from-emerald-500 to-emerald-600',
+      hoverColor: 'hover:from-emerald-600 hover:to-emerald-700',
+      route: '/shenlun',
+      features: ['历年真题', '给定材料', '名师答案', 'AI批改'],
+      stats: '2018-2025 真题',
+    },
+    {
+      title: '每日政务要闻',
+      subtitle: '江苏政务新闻 / AI精选素材 / 备考积累',
+      icon: '📰',
+      color: 'from-amber-500 to-amber-600',
+      hoverColor: 'hover:from-amber-600 hover:to-amber-700',
+      route: '/daily-news',
+      features: ['每日更新', 'AI精选', '公考素材', '热点追踪'],
+      stats: '每日 19:00 更新',
+    },
+  ]
+
   return (
     <main className="min-h-screen bg-slate-50">
       {/* Header */}
       <header className="bg-white shadow-sm">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-2xl">🐻</span>
-            <h1 className="text-xl font-bold text-slate-800">江苏公务员面试答题训练</h1>
+            <h1 className="text-xl font-bold text-slate-800">江苏公考AI智能训练网站</h1>
           </div>
           <div className="flex items-center gap-4">
             {getQuotaDisplay()}
@@ -108,85 +141,61 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="max-w-4xl mx-auto px-4 py-12">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold text-slate-800 mb-4">
-            江苏省公务员面试AI智能训练
+      {/* Hero Section */}
+      <div className="bg-white border-b border-slate-200">
+        <div className="max-w-5xl mx-auto px-4 py-16 text-center">
+          <h2 className="text-4xl font-bold text-slate-800 mb-4">
+            江苏公考AI智能训练网站
           </h2>
-          <p className="text-slate-600 max-w-lg mx-auto">
-            随机生成江苏特色面试题，AI智能批改，助你高效备考
+          <p className="text-slate-500 text-lg max-w-2xl mx-auto">
+            面试、申论、时政三大模块，AI智能辅助，助你高效备考江苏省公务员考试
           </p>
         </div>
+      </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-4xl mx-auto">
-          <button
-            onClick={() => router.push('/practice')}
-            className="bg-primary-600 hover:bg-primary-700 text-white p-8 rounded-2xl shadow-lg transition-all hover:shadow-xl text-left group"
-          >
-            <div className="text-4xl mb-4">📝</div>
-            <h3 className="text-xl font-bold mb-2">开始练习</h3>
-            <p className="text-primary-100 text-sm">
-              选择题型，随机出题，提交答案后AI智能批改
-            </p>
-          </button>
+      {/* Module Cards */}
+      <div className="max-w-5xl mx-auto px-4 py-12">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {modules.map((module) => (
+            <button
+              key={module.route}
+              onClick={() => router.push(module.route)}
+              className={`bg-gradient-to-br ${module.color} ${module.hoverColor} text-white p-8 rounded-2xl shadow-lg transition-all hover:shadow-2xl hover:-translate-y-1 text-left group relative overflow-hidden`}
+            >
+              {/* 背景装饰 */}
+              <div className="absolute -top-8 -right-8 w-32 h-32 bg-white/10 rounded-full" />
+              <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-white/5 rounded-full" />
 
-          <button
-            onClick={() => router.push('/custom-question')}
-            className="bg-white hover:bg-slate-50 text-slate-800 p-8 rounded-2xl shadow-lg transition-all hover:shadow-xl text-left border border-slate-200 group"
-          >
-            <div className="text-4xl mb-4">✏️</div>
-            <h3 className="text-xl font-bold mb-2">自定义题目</h3>
-            <p className="text-slate-500 text-sm">
-              输入你自己的面试题，AI生成参考答案
-            </p>
-          </button>
+              <div className="relative">
+                {/* 统计标签 */}
+                <div className="absolute top-0 right-0 text-xs bg-white/20 text-white px-2.5 py-1 rounded-full font-medium backdrop-blur-sm">
+                  {module.stats}
+                </div>
 
-          <button
-            onClick={() => router.push('/history')}
-            className="bg-white hover:bg-slate-50 text-slate-800 p-8 rounded-2xl shadow-lg transition-all hover:shadow-xl text-left border border-slate-200 group"
-          >
-            <div className="text-4xl mb-4">📚</div>
-            <h3 className="text-xl font-bold mb-2">练习记录</h3>
-            <p className="text-slate-500 text-sm">
-              查看历史答题记录和AI批改结果
-            </p>
-          </button>
+                <div className="text-5xl mb-5">{module.icon}</div>
+                <h3 className="text-2xl font-bold mb-2">{module.title}</h3>
+                <p className="text-white/80 text-sm mb-5">{module.subtitle}</p>
 
-          <button
-            onClick={() => router.push('/daily-news')}
-            className="bg-white hover:bg-slate-50 text-slate-800 p-8 rounded-2xl shadow-lg transition-all hover:shadow-xl text-left border border-slate-200 group"
-          >
-            <div className="text-4xl mb-4">📰</div>
-            <h3 className="text-xl font-bold mb-2">每日政务要闻</h3>
-            <p className="text-slate-500 text-sm">
-              每天19:00自动抓取江苏政务新闻，AI精选公考备考素材
-            </p>
-          </button>
+                {/* 功能标签 */}
+                <div className="flex flex-wrap gap-2">
+                  {module.features.map((feature) => (
+                    <span
+                      key={feature}
+                      className="text-xs bg-white/20 text-white px-2.5 py-1 rounded-full backdrop-blur-sm"
+                    >
+                      {feature}
+                    </span>
+                  ))}
+                </div>
 
-          <button
-            onClick={() => router.push('/zhenti')}
-            className="bg-white hover:bg-slate-50 text-slate-800 p-8 rounded-2xl shadow-lg transition-all hover:shadow-xl text-left border border-slate-200 group relative overflow-hidden"
-          >
-            <div className="absolute top-3 right-3 text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">2008-2026</div>
-            <div className="text-4xl mb-4">📜</div>
-            <h3 className="text-xl font-bold mb-2">面试真题参考</h3>
-            <p className="text-slate-500 text-sm">
-              江苏省考历年真题 + AI三答对比 + 汇总参考答案
-            </p>
-          </button>
-
-          <button
-            onClick={() => router.push('/shenlun')}
-            className="bg-white hover:bg-slate-50 text-slate-800 p-8 rounded-2xl shadow-lg transition-all hover:shadow-xl text-left border border-slate-200 group relative overflow-hidden"
-          >
-            <div className="absolute top-3 right-3 text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">2018-2025</div>
-            <div className="text-4xl mb-4">📝</div>
-            <h3 className="text-xl font-bold mb-2">申论真题参考</h3>
-            <p className="text-slate-500 text-sm">
-              江苏申论历年真题 + 多名师答案 + 给定材料原文
-            </p>
-          </button>
+                {/* 进入箭头 */}
+                <div className="mt-6 flex items-center gap-1 text-sm text-white/70 group-hover:text-white transition-colors">
+                  <span>进入训练</span>
+                  <span className="group-hover:translate-x-1 transition-transform">→</span>
+                </div>
+              </div>
+            </button>
+          ))}
         </div>
 
         {/* 额度提示 */}
@@ -211,28 +220,6 @@ export default function Home() {
             </div>
           </div>
         )}
-
-        <div className="mt-8 bg-white rounded-xl p-6 shadow-sm border border-slate-200 max-w-2xl mx-auto">
-          <h3 className="font-bold text-slate-800 mb-4">支持的题型</h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {[
-              '社会现象类',
-              '态度观点类',
-              '组织管理类',
-              '应急应变类',
-              '人际关系类',
-              '自我认知类',
-              '情景模拟类',
-            ].map((type) => (
-              <div
-                key={type}
-                className="bg-slate-50 rounded-lg px-4 py-2 text-sm text-slate-700 text-center"
-              >
-                {type}
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
     </main>
   )

@@ -120,11 +120,11 @@ export default function CustomQuestion() {
       <header className="bg-white shadow-sm">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <button
-            onClick={() => router.push('/')}
-            className="flex items-center gap-2 text-slate-800"
-          >
-            <span className="text-2xl">🐻</span>
-            <span className="font-bold">江苏公务员面试答题训练</span>
+              onClick={() => router.push('/interview')}
+              className="flex items-center gap-2 text-slate-800"
+            >
+              <span className="text-2xl">🐻</span>
+              <span className="font-bold">公考面试训练</span>
           </button>
           <div className="text-sm text-slate-500">
             {step === 'question' && '输入题目'}

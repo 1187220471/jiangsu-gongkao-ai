@@ -102,13 +102,13 @@ export default function ZhentiPage() {
       <header className="bg-white shadow-sm sticky top-0 z-20">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <button
-            onClick={() => router.push('/')}
+            onClick={() => router.push('/interview')}
             className="flex items-center gap-1 text-sm text-slate-500 hover:text-primary-600 transition-colors"
           >
             <span>←</span>
-            <span>首页</span>
+            <span>面试训练</span>
           </button>
-          <h1 className="text-lg font-bold text-slate-800">📜 真题复盘</h1>
+          <h1 className="text-lg font-bold text-slate-800">📜 面试真题参考</h1>
           <div className="text-sm text-slate-500">共 {total} 题</div>
         </div>
       </header>
