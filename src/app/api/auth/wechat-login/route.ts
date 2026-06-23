@@ -20,11 +20,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '微信配置未设置' }, { status: 500 })
     }
 
+    console.log('微信登录请求:', { code: code?.slice(0, 10) + '...', WECHAT_APPID: WECHAT_APPID?.slice(0, 5) + '...' })
+
     // 1. 调用微信接口换取openid
-    const wxRes = await fetch(
-      `https://api.weixin.qq.com/sns/jscode2session?appid=${WECHAT_APPID}&secret=${WECHAT_SECRET}&js_code=${code}&grant_type=authorization_code`
-    )
+    const wxUrl = `https://api.weixin.qq.com/sns/jscode2session?appid=${WECHAT_APPID}&secret=${WECHAT_SECRET}&js_code=${code}&grant_type=authorization_code`
+    console.log('请求微信接口:', wxUrl.replace(WECHAT_SECRET, '***'))
+    
+    const wxRes = await fetch(wxUrl)
     const wxData = await wxRes.json()
+    
+    console.log('微信接口返回:', wxData)
 
     if (wxData.errcode) {
       return NextResponse.json(
