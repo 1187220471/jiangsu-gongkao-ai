@@ -1,6 +1,6 @@
 /**
  * 申论真题数据入库脚本
- * 从 /Users/yier/Documents/daijinli网页版/.workbuddy/knowledge/jiangsu-shenlun-2018-2025-merged.json
+ * 从项目根目录下的 .workbuddy/knowledge/jiangsu-shenlun-2018-2025-merged.json
  * 读取 2018-2025 年江苏申论真题，写入 ShenlunQuestion / ShenlunMaterial / ShenlunTeacherAnswer
  *
  * 运行方式（在项目根目录）：
@@ -9,10 +9,11 @@
 
 import { PrismaClient } from '@prisma/client'
 import * as fs from 'fs'
+import * as path from 'path'
 
 const prisma = new PrismaClient()
 
-const DATA_PATH = '/Users/yier/Documents/daijinli网页版/.workbuddy/knowledge/jiangsu-shenlun-2018-2025-merged.json'
+const DATA_PATH = path.join(process.cwd(), '.workbuddy', 'knowledge', 'jiangsu-shenlun-2018-2025-merged.json')
 
 interface RawAnswer {
   teacher: string
