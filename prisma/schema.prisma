@@ -22,6 +22,8 @@ model User {
   accessLevel      String    @default("none")
   recentTopics     String[]  @default([])
   records          Record[]
+  userPoints       UserPoints?
+  userCollections  UserCollection[]
 }
 
 model Record {
@@ -195,4 +197,57 @@ model ShenlunBookmark {
   @@unique([userId, questionId])
   @@index([userId])
   @@map("shenlun_bookmark")
+}
+
+// 学习点 + 抽卡集卡系统
+model UserPoints {
+  userId      String   @id
+  balance     Int      @default(0)
+  totalEarned Int      @default(0)
+  totalSpent  Int      @default(0)
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_points")
+}
+
+model PointsLog {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  amount    Int
+  type      String // answer / set / zhenti / shenlun / focus / dailySign / draw / drawRepeat / share
+  refId     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("points_log")
+}
+
+model SupplyItem {
+  id          Int      @id @default(autoincrement())
+  category    String // pixelPet
+  rarity      String // common / rare / epic / legendary
+  name        String   @unique
+  description String?
+  imageUrl    String
+  unlockHint  String?
+  createdAt   DateTime @default(now())
+  userCollections UserCollection[]
+
+  @@map("supply_item")
+}
+
+model UserCollection {
+  id         Int      @id @default(autoincrement())
+  userId     String
+  itemId     Int
+  source     String // freeDraw / paidDraw / share
+  obtainedAt DateTime @default(now())
+  isEquipped Boolean  @default(false)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item       SupplyItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId])
+  @@index([userId, obtainedAt])
+  @@map("user_collection")
 }

@@ -18,3 +18,12 @@ dev.db
 *.pem
 npm-debug.log*
 .env
+
+# TypeScript
+*.tsbuildinfo
+
+# WorkBuddy memory
+.workbuddy/memory/
+
+# Test/dev scripts
+scripts/
