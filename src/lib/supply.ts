@@ -31,10 +31,8 @@ export const DRAW_COST = 3
 export const FREE_DRAW_PER_DAY = 1
 
 export const RARITY_WEIGHTS = [
-  { rarity: 'common', weight: 70 },
-  { rarity: 'rare', weight: 23 },
-  { rarity: 'epic', weight: 6 },
-  { rarity: 'legendary', weight: 1 },
+  { rarity: 'common', weight: 80 },
+  { rarity: 'rare', weight: 20 },
 ]
 
 export interface EarnPointsInput {
@@ -106,6 +104,23 @@ export async function spendPoints(userId: string, amount: number, type: PointsTy
 export async function getBalance(userId: string) {
   const points = await prisma.userPoints.findUnique({ where: { userId } })
   return points?.balance ?? 0
+}
+
+/**
+ * 检查今日免费抽是否已使用（与 drawItem 内的判定逻辑保持一致）
+ */
+export async function hasFreeDrawToday(userId: string): Promise<boolean> {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const freeDrawsToday = await prisma.pointsLog.count({
+    where: {
+      userId,
+      type: 'draw',
+      refId: { startsWith: 'free:' },
+      createdAt: { gte: today },
+    },
+  })
+  return freeDrawsToday >= FREE_DRAW_PER_DAY
 }
 
 export async function getCollection(userId: string) {

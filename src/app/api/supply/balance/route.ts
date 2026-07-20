@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
-import { getBalance, getEquippedItem } from '@/lib/supply'
+import { getBalance, getEquippedItem, hasFreeDrawToday } from '@/lib/supply'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,13 +11,15 @@ export async function GET(request: Request) {
       return auth.response
     }
 
-    const [balance, equipped] = await Promise.all([
+    const [balance, equipped, freeDrawUsedToday] = await Promise.all([
       getBalance(auth.userId),
       getEquippedItem(auth.userId),
+      hasFreeDrawToday(auth.userId),
     ])
 
     return NextResponse.json({
       balance,
+      freeDrawUsedToday,
       equippedItem: equipped
         ? {
             id: equipped.item.id,

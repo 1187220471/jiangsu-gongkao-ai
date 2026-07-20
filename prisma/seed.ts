@@ -3,22 +3,24 @@ import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 
 const PETS = [
+  // 普通（12）
   { name: '橘猫', enName: 'OrangeCat', rarity: 'common' },
   { name: '蓝猫', enName: 'BlueCat', rarity: 'common' },
   { name: '银渐层', enName: 'SilverShaded', rarity: 'common' },
   { name: '柯基', enName: 'Corgi', rarity: 'common' },
   { name: '柴犬', enName: 'Shiba', rarity: 'common' },
+  { name: '泰迪', enName: 'Poodle', rarity: 'common' },
+  { name: '金毛', enName: 'GoldenRetriever', rarity: 'common' },
+  { name: '哈士奇', enName: 'Husky', rarity: 'common' },
+  { name: '萨摩耶', enName: 'Samoyed', rarity: 'common' },
+  { name: '边牧', enName: 'BorderCollie', rarity: 'common' },
   { name: '仓鼠', enName: 'Hamster', rarity: 'common' },
   { name: '垂耳兔', enName: 'LopRabbit', rarity: 'common' },
+  // 稀有（4）
   { name: '布偶', enName: 'Ragdoll', rarity: 'rare' },
-  { name: '泰迪', enName: 'Poodle', rarity: 'rare' },
-  { name: '金毛', enName: 'GoldenRetriever', rarity: 'rare' },
-  { name: '萨摩耶', enName: 'Samoyed', rarity: 'rare' },
-  { name: '边牧', enName: 'BorderCollie', rarity: 'rare' },
-  { name: '哈士奇', enName: 'Husky', rarity: 'epic' },
-  { name: '龙猫', enName: 'Chinchilla', rarity: 'epic' },
-  { name: '小熊猫', enName: 'RedPanda', rarity: 'epic' },
-  { name: '企鹅', enName: 'Penguin', rarity: 'legendary' },
+  { name: '龙猫', enName: 'Chinchilla', rarity: 'rare' },
+  { name: '小熊猫', enName: 'RedPanda', rarity: 'rare' },
+  { name: '企鹅', enName: 'Penguin', rarity: 'rare' },
 ]
 
 async function main() {
@@ -27,7 +29,7 @@ async function main() {
   for (const pet of PETS) {
     await prisma.supplyItem.upsert({
       where: { name: pet.name },
-      update: {},
+      update: { rarity: pet.rarity },
       create: {
         category: 'pixelPet',
         rarity: pet.rarity,
