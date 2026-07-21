@@ -24,6 +24,7 @@ model User {
   records          Record[]
   userPoints       UserPoints?
   userCollections  UserCollection[]
+  focusSessions    FocusSession[]
 }
 
 model Record {
@@ -250,4 +251,19 @@ model UserCollection {
   @@unique([userId, itemId])
   @@index([userId, obtainedAt])
   @@map("user_collection")
+}
+
+model FocusSession {
+  id            Int       @id @default(autoincrement())
+  userId        String
+  duration      Int       // 30 or 60
+  status        String    // active / completed / abandoned / cheated
+  startedAt     DateTime
+  endedAt       DateTime?
+  pointsAwarded Int       @default(0)
+  createdAt     DateTime  @default(now())
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+  @@map("focus_session")
 }
