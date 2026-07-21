@@ -136,6 +136,28 @@ async function getBalance(userId: string) {
   return points?.balance ?? 0
 }
 
+export interface ActiveFocusSession {
+  sessionId: number
+  duration: number
+  startedAt: string
+  elapsedSeconds: number
+}
+
+export async function getActiveFocusSession(userId: string): Promise<ActiveFocusSession | null> {
+  const session = await prisma.focusSession.findFirst({
+    where: { userId, status: 'active' },
+    orderBy: { startedAt: 'desc' },
+  })
+  if (!session) return null
+
+  return {
+    sessionId: session.id,
+    duration: session.duration,
+    startedAt: session.startedAt.toISOString(),
+    elapsedSeconds: Math.floor((Date.now() - session.startedAt.getTime()) / 1000),
+  }
+}
+
 export interface TodayFocusSummary {
   totalMinutes: number
   completedMinutes: number
