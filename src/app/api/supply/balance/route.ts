@@ -22,10 +22,11 @@ export async function GET(request: Request) {
       freeDrawUsedToday,
       equippedItem: equipped
         ? {
-            id: equipped.item.id,
-            name: equipped.item.name,
-            imageUrl: equipped.item.imageUrl,
-          }
+                id: equipped.item.id,
+                name: equipped.item.name,
+                imageUrl: equipped.item.imageUrl,
+                rarity: equipped.item.rarity,
+              }
         : null,
     })
   } catch (error) {
