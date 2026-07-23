@@ -27,7 +27,6 @@ export default function Home() {
       return
     }
 
-    // 获取用户信息
     fetch('/api/auth/me', {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -45,7 +44,6 @@ export default function Home() {
         router.push('/login')
       })
 
-    // 获取额度信息
     fetch('/api/quota', {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -67,13 +65,13 @@ export default function Home() {
     if (!quota) return null
     if (quota.hasAccess) {
       return (
-        <span className="text-sm bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full font-medium">
+        <span className="text-xxs bg-slate-800 text-white px-2.5 py-1 rounded-lg font-medium">
           ⭐ 已邀请
         </span>
       )
     }
     return (
-      <span className="text-sm bg-primary-50 text-primary-600 px-2 py-0.5 rounded-full">
+      <span className="text-xxs bg-primary-50 text-primary-600 px-2.5 py-1 rounded-lg font-medium">
         今日剩余 {quota.remainingFree} 次
       </span>
     )
@@ -82,46 +80,37 @@ export default function Home() {
   const modules = [
     {
       title: '公考面试训练',
-      subtitle: '结构化面试 / 真题模拟 / AI智能批改',
+      subtitle: '结构化面试 · 真题模拟 · AI批改',
       icon: '🎤',
-      color: 'from-blue-500 to-blue-600',
-      hoverColor: 'hover:from-blue-600 hover:to-blue-700',
       route: '/interview',
       features: ['随机出题', '语音答题', 'AI批改', '真题参考'],
-      stats: '2008-2026 真题',
     },
     {
       title: '公考申论训练',
-      subtitle: '材料分析 / 写作训练 / 名师答案对比',
+      subtitle: '材料分析 · 写作训练 · 名师答案',
       icon: '📝',
-      color: 'from-emerald-500 to-emerald-600',
-      hoverColor: 'hover:from-emerald-600 hover:to-emerald-700',
       route: '/shenlun',
       features: ['历年真题', '给定材料', '名师答案', 'AI批改'],
-      stats: '2018-2025 真题',
     },
     {
       title: '每日政务要闻',
-      subtitle: '江苏政务新闻 / AI精选素材 / 备考积累',
+      subtitle: '江苏政务 · AI精选 · 备考积累',
       icon: '📰',
-      color: 'from-amber-500 to-amber-600',
-      hoverColor: 'hover:from-amber-600 hover:to-amber-700',
       route: '/daily-news',
       features: ['每日更新', 'AI精选', '公考素材', '热点追踪'],
-      stats: '每日 19:00 更新',
     },
   ]
 
   return (
-    <main className="min-h-screen bg-slate-50">
+    <main className="pb-6">
       {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+      <header className="bg-white">
+        <div className="max-w-5xl mx-auto px-4 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-2xl">🐻</span>
-            <h1 className="text-xl font-bold text-slate-800">江苏公考AI智能训练网站</h1>
+            <span className="text-xl">🐻</span>
+            <h1 className="text-base font-bold text-slate-800">江苏公考AI智能训练</h1>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             {getQuotaDisplay()}
             {user && (
               <button
@@ -133,7 +122,7 @@ export default function Home() {
             )}
             <button
               onClick={handleLogout}
-              className="text-sm text-slate-500 hover:text-slate-700"
+              className="text-sm text-slate-400 hover:text-slate-600"
             >
               退出
             </button>
@@ -142,57 +131,45 @@ export default function Home() {
       </header>
 
       {/* Hero Section */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-5xl mx-auto px-4 py-16 text-center">
-          <h2 className="text-4xl font-bold text-slate-800 mb-4">
-            江苏公考AI智能训练网站
+      <div className="bg-white">
+        <div className="max-w-5xl mx-auto px-4 pb-10 pt-6">
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">
+            江苏公考AI智能训练
           </h2>
-          <p className="text-slate-500 text-lg max-w-2xl mx-auto">
-            面试、申论、时政三大模块，AI智能辅助，助你高效备考江苏省公务员考试
+          <p className="text-slate-400 text-sm">
+            面试、申论、时政三大模块，AI智能辅助，助你高效备考
           </p>
         </div>
       </div>
 
       {/* Module Cards */}
-      <div className="max-w-5xl mx-auto px-4 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="max-w-5xl mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {modules.map((module) => (
             <button
               key={module.route}
               onClick={() => router.push(module.route)}
-              className={`bg-gradient-to-br ${module.color} ${module.hoverColor} text-white p-8 rounded-2xl shadow-lg transition-all hover:shadow-2xl hover:-translate-y-1 text-left group relative overflow-hidden`}
+              className="card-pixel p-5 text-left transition-all hover:-translate-y-0.5 active:opacity-85 active:scale-98"
             >
-              {/* 背景装饰 */}
-              <div className="absolute -top-8 -right-8 w-32 h-32 bg-white/10 rounded-full" />
-              <div className="absolute -bottom-4 -left-4 w-24 h-24 bg-white/5 rounded-full" />
-
-              <div className="relative">
-                {/* 统计标签 */}
-                <div className="absolute top-0 right-0 text-xs bg-white/20 text-white px-2.5 py-1 rounded-full font-medium backdrop-blur-sm">
-                  {module.stats}
+              <div className="flex items-start gap-4 mb-4">
+                <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center flex-shrink-0">
+                  <span className="text-3xl">{module.icon}</span>
                 </div>
-
-                <div className="text-5xl mb-5">{module.icon}</div>
-                <h3 className="text-2xl font-bold mb-2">{module.title}</h3>
-                <p className="text-white/80 text-sm mb-5">{module.subtitle}</p>
-
-                {/* 功能标签 */}
-                <div className="flex flex-wrap gap-2">
-                  {module.features.map((feature) => (
-                    <span
-                      key={feature}
-                      className="text-xs bg-white/20 text-white px-2.5 py-1 rounded-full backdrop-blur-sm"
-                    >
-                      {feature}
-                    </span>
-                  ))}
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-bold text-slate-800 mb-1">{module.title}</h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">{module.subtitle}</p>
                 </div>
+              </div>
 
-                {/* 进入箭头 */}
-                <div className="mt-6 flex items-center gap-1 text-sm text-white/70 group-hover:text-white transition-colors">
-                  <span>进入训练</span>
-                  <span className="group-hover:translate-x-1 transition-transform">→</span>
-                </div>
+              <div className="flex flex-wrap gap-1.5">
+                {module.features.map((feature) => (
+                  <span
+                    key={feature}
+                    className="tag-pixel"
+                  >
+                    {feature}
+                  </span>
+                ))}
               </div>
             </button>
           ))}
@@ -200,21 +177,21 @@ export default function Home() {
 
         {/* 额度提示 */}
         {quota && !quota.hasAccess && (
-          <div className="mt-8 bg-blue-50 rounded-xl p-4 border border-blue-200 max-w-3xl mx-auto">
+          <div className="mt-6 bg-white rounded-2xl p-4 max-w-3xl mx-auto">
             <div className="flex items-center gap-2">
-              <span className="text-lg">💡</span>
-              <span className="text-sm text-blue-800">
-                每日免费 <strong>5</strong> 次AI练习，今日剩余 <strong>{quota.remainingFree}</strong> 次
+              <span className="text-sm">💡</span>
+              <span className="text-xs text-slate-600">
+                每日免费 <strong className="text-slate-800">5</strong> 次AI练习，今日剩余 <strong className="text-slate-800">{quota.remainingFree}</strong> 次
               </span>
             </div>
           </div>
         )}
 
         {quota && quota.hasAccess && (
-          <div className="mt-8 bg-yellow-50 rounded-xl p-4 border border-yellow-200 max-w-3xl mx-auto">
+          <div className="mt-6 bg-white rounded-2xl p-4 max-w-3xl mx-auto">
             <div className="flex items-center gap-2">
-              <span className="text-lg">⭐</span>
-              <span className="text-sm text-yellow-800">
+              <span className="text-sm">⭐</span>
+              <span className="text-xs text-slate-600">
                 已邀请用户，无限次使用，感谢您的支持！
               </span>
             </div>

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import Footer from '@/components/Footer'
 
 export const metadata: Metadata = {
   title: '江苏公考AI智能训练网站',
@@ -13,7 +14,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body className="bg-white flex flex-col min-h-screen">
+        <div className="flex-1 bg-slate-50">{children}</div>
+        <Footer />
+      </body>
     </html>
   )
 }

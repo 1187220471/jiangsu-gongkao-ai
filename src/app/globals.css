@@ -2,17 +2,226 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============ CSS 变量 ============ */
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-rgb: 248, 250, 252;
+  /* 主色 */
+  --color-primary: #3b82f6;
+  --color-primary-dark: #2563eb;
+
+  /* 深色按钮 */
+  --color-btn-bg: #111827;
+  --color-btn-text: #ffffff;
+  --color-btn-shadow: #374151;
+
+  /* 文字色 */
+  --color-text-primary: #111827;
+  --color-text-secondary: #9ca3af;
+  --color-text-body: #374151;
+  --color-text-muted: #6b7280;
+
+  /* 背景 */
+  --color-bg-page: #f5f5f5;
+  --color-bg-card: #ffffff;
+  --color-bg-input: #f3f4f6;
+
+  /* 边框 */
+  --color-border: #e5e7eb;
+  --color-border-light: #d1d5db;
 }
 
+/* ============ 像素风全局样式 ============ */
+
+/* 像素图片渲染 */
+img {
+  image-rendering: pixelated;
+}
+
+@layer components {
+  /* 主按钮（深色像素风，3D 效果） */
+  .btn-pixel {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-btn-bg);
+    color: var(--color-btn-text);
+    font-weight: 600;
+    border-radius: 14px;
+    box-shadow: 0 4px 0 var(--color-btn-shadow);
+    transition: all 0.1s ease;
+    cursor: pointer;
+    border: none;
+    outline: none;
+  }
+  .btn-pixel:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 var(--color-btn-shadow);
+  }
+  .btn-pixel:disabled {
+    background: #d1d5db;
+    color: #ffffff;
+    box-shadow: 0 4px 0 #9ca3af;
+    cursor: not-allowed;
+    opacity: 0.95;
+  }
+
+  /* 卡片 */
+  .card-pixel {
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  }
+
+  /* 可点击卡片激活效果 */
+  .card-active:active {
+    opacity: 0.85;
+    transform: scale(0.98);
+  }
+
+  /* 像素边框装饰（稀有元素 shimmer） */
+  .pixel-border-shimmer {
+    position: relative;
+  }
+  .pixel-border-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 2px solid transparent;
+    animation: rareShimmer 1.6s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  /* 3D 按钮通用 */
+  .btn-3d {
+    box-shadow: 0 4px 0 #374151;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+  }
+  .btn-3d:active {
+    transform: translateY(3px);
+    box-shadow: 0 1px 0 #374151;
+  }
+
+  /* 输入框 */
+  .input-pixel {
+    background: #f3f4f6;
+    border-radius: 10px;
+    border: none;
+    padding: 0 12px;
+    font-size: 14px;
+    color: #111827;
+    box-sizing: border-box;
+  }
+  .input-pixel:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: -2px;
+  }
+
+  /* 标签/徽章 */
+  .tag-pixel {
+    display: inline-flex;
+    align-items: center;
+    background: #f3f4f6;
+    border-radius: 10px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #4b5563;
+  }
+
+  /* 进度条 */
+  .progress-pixel {
+    height: 6px;
+    background: #f3f4f6;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-pixel-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #60a5fa);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+
+  /* 分割线 */
+  .divider-pixel {
+    height: 1px;
+    background: #e5e7eb;
+    width: 100%;
+  }
+
+  /* 统计数字 */
+  .stat-num-pixel {
+    font-size: 18px;
+    font-weight: 700;
+    color: #111827;
+    line-height: 1;
+  }
+  .stat-label-pixel {
+    font-size: 11px;
+    color: #9ca3af;
+  }
+
+  /* 区块标题 */
+  .section-title-pixel {
+    font-size: 16px;
+    font-weight: 700;
+    color: #111827;
+    padding-left: 4px;
+  }
+}
+
+/* ============ 像素风关键帧动画 ============ */
+@keyframes rareShimmer {
+  0%,
+  100% {
+    border-color: rgba(59, 130, 246, 0.35);
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.15);
+  }
+  50% {
+    border-color: rgba(59, 130, 246, 0.85);
+    box-shadow: 0 0 12px 2px rgba(59, 130, 246, 0.25);
+  }
+}
+
+@keyframes pixelBlink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes pixelBounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+/* ============ 基础重置 ============ */
 body {
-  color: rgb(var(--foreground-rgb));
-  background: rgb(var(--background-rgb));
+  background: var(--color-bg-page);
+  color: var(--color-text-body);
   min-height: 100vh;
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* 滚动条像素风 */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f5f5f5;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
 }

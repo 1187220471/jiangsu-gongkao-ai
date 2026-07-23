@@ -197,18 +197,18 @@ export default function Profile() {
   if (!profile) return null
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="pb-10">
       {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
+      <header className="bg-white">
+        <div className="max-w-3xl mx-auto px-4 py-3.5 flex items-center justify-between">
           <button
             onClick={() => router.push('/')}
-            className="flex items-center gap-2 text-slate-700 hover:text-slate-900"
+            className="flex items-center gap-2 text-slate-600 hover:text-slate-800"
           >
-            <span className="text-xl">←</span>
-            <span className="font-medium">返回首页</span>
+            <span className="text-base">←</span>
+            <span className="text-sm font-medium">返回首页</span>
           </button>
-          <h1 className="text-lg font-bold text-slate-800">个人中心</h1>
+          <h1 className="text-base font-bold text-slate-800">个人中心</h1>
           <button
             onClick={handleLogout}
             className="text-sm text-slate-500 hover:text-slate-700"
@@ -220,13 +220,13 @@ export default function Profile() {
 
       <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
         {/* 用户信息卡片 */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+        <div className="card-pixel p-6">
           <div className="flex items-center gap-4 mb-4">
-            <div className="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center text-2xl">
+            <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center text-xl">
               🐻
             </div>
             <div>
-              <h2 className="text-xl font-bold text-slate-800">
+              <h2 className="text-lg font-bold text-slate-800">
                 {profile.user.nickname || profile.user.username}
               </h2>
               <p className="text-sm text-slate-500">
@@ -240,8 +240,8 @@ export default function Profile() {
         </div>
 
         {/* 邀请权限状态卡片 */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-          <h3 className="text-lg font-bold text-slate-800 mb-4">邀请权限</h3>
+        <div className="card-pixel p-6">
+          <h3 className="text-base font-bold text-slate-800 mb-4">邀请权限</h3>
 
           {profile.access.hasAccess ? (
             <div className={`rounded-xl p-4 border ${profile.access.accessLevel === 'year' ? 'bg-purple-50 border-purple-200' : 'bg-yellow-50 border-yellow-200'}`}>
@@ -281,13 +281,13 @@ export default function Profile() {
                 type="text"
                 value={inviteCode}
                 onChange={(e) => setInviteCode(e.target.value)}
-                className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="flex-1 h-10 bg-slate-100 rounded-[10px] border-none px-3 text-sm text-slate-800 focus:outline-2 focus:outline-[#3b82f6] focus:-outline-offset-2 box-border"
                 placeholder="请输入邀请码"
               />
               <button
                 type="submit"
                 disabled={inviteLoading}
-                className="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
+                className="btn-3d bg-slate-800 text-white px-5 py-2 rounded-[14px] text-sm font-semibold transition-all disabled:opacity-50 active:translate-y-1 active:shadow-[0_1px_0_#374151]"
               >
                 {inviteLoading ? '验证中...' : '确认'}
               </button>
@@ -302,8 +302,8 @@ export default function Profile() {
         </div>
 
         {/* 小程序账号绑定 */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-          <h3 className="text-lg font-bold text-slate-800 mb-4">绑定小程序</h3>
+        <div className="card-pixel p-6">
+          <h3 className="text-base font-bold text-slate-800 mb-4">绑定小程序</h3>
           <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 mb-4">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-2xl">📱</span>
@@ -316,7 +316,7 @@ export default function Profile() {
           <button
             onClick={handleGenerateBindToken}
             disabled={bindLoading}
-            className="w-full bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
+            className="btn-3d w-full bg-green-600 text-white px-6 py-2.5 rounded-[14px] text-sm font-semibold transition-all disabled:opacity-50 active:translate-y-1 active:shadow-[0_1px_0_#166534]"
           >
             {bindLoading ? '生成中...' : '生成小程序绑定码'}
           </button>
@@ -340,8 +340,8 @@ export default function Profile() {
         </div>
 
         {/* 使用统计 */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-          <h3 className="text-lg font-bold text-slate-800 mb-4">使用统计</h3>
+        <div className="card-pixel p-6">
+          <h3 className="text-base font-bold text-slate-800 mb-4">使用统计</h3>
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-slate-50 rounded-xl p-4 text-center">
               <div className="text-3xl font-bold text-primary-600">
@@ -359,14 +359,14 @@ export default function Profile() {
         </div>
 
         {/* 意见反馈 */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-          <h3 className="text-lg font-bold text-slate-800 mb-4">意见反馈</h3>
+        <div className="card-pixel p-6">
+          <h3 className="text-base font-bold text-slate-800 mb-4">意见反馈</h3>
           <form onSubmit={handleSubmitFeedback}>
             <div className="mb-3">
               <select
                 value={feedbackType}
                 onChange={(e) => setFeedbackType(e.target.value)}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full h-10 bg-slate-100 rounded-[10px] border-none px-3 text-sm text-slate-800 focus:outline-2 focus:outline-[#3b82f6] focus:-outline-offset-2 box-border"
               >
                 <option value="建议">💡 功能建议</option>
                 <option value="BUG">🐛 问题反馈</option>
@@ -376,7 +376,7 @@ export default function Profile() {
             <textarea
               value={feedbackContent}
               onChange={(e) => setFeedbackContent(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
+              className="w-full bg-slate-100 rounded-[10px] border-none px-3 py-2 text-sm text-slate-800 focus:outline-2 focus:outline-[#3b82f6] focus:-outline-offset-2 box-border resize-none"
               rows={4}
               placeholder="请描述您遇到的问题或建议..."
               maxLength={2000}
@@ -388,7 +388,7 @@ export default function Profile() {
               <button
                 type="submit"
                 disabled={feedbackLoading || !feedbackContent.trim()}
-                className="bg-slate-700 hover:bg-slate-800 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50"
+                className="btn-3d bg-slate-800 text-white px-5 py-2 rounded-[14px] text-sm font-semibold transition-all disabled:opacity-50 active:translate-y-1 active:shadow-[0_1px_0_#374151]"
               >
                 {feedbackLoading ? '提交中...' : '提交反馈'}
               </button>
