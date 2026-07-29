@@ -26,6 +26,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       equippedItemId: result.equippedItemId,
+      equippedCategory: result.equippedCategory,
     })
   } catch (error) {
     console.error('Supply equip error:', error)

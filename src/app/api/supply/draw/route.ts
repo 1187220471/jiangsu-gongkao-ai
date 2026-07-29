@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
-import { drawItem } from '@/lib/supply'
+import { drawItem, type SupplyCategory } from '@/lib/supply'
 
 export const dynamic = 'force-dynamic'
+
+const VALID_CATEGORIES: SupplyCategory[] = ['pixelPet', 'nbaStar']
 
 export async function POST(request: Request) {
   try {
@@ -12,7 +14,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { source } = body
+    const { source, category = 'pixelPet' } = body
 
     if (!source || (source !== 'free' && source !== 'paid')) {
       return NextResponse.json(
@@ -21,7 +23,14 @@ export async function POST(request: Request) {
       )
     }
 
-    const result = await drawItem(auth.userId, source)
+    if (!VALID_CATEGORIES.includes(category)) {
+      return NextResponse.json(
+        { error: 'category 无效' },
+        { status: 400 }
+      )
+    }
+
+    const result = await drawItem(auth.userId, source, category)
 
     return NextResponse.json({
       success: true,

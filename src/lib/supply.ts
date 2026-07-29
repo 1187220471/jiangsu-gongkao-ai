@@ -123,8 +123,11 @@ export async function hasFreeDrawToday(userId: string): Promise<boolean> {
   return freeDrawsToday >= FREE_DRAW_PER_DAY
 }
 
-export async function getCollection(userId: string) {
+export type SupplyCategory = 'pixelPet' | 'nbaStar'
+
+export async function getCollection(userId: string, category: SupplyCategory = 'pixelPet') {
   const items = await prisma.supplyItem.findMany({
+    where: { category },
     orderBy: { id: 'asc' },
   })
 
@@ -143,7 +146,7 @@ export async function getCollection(userId: string) {
   }))
 }
 
-export async function drawItem(userId: string, source: 'free' | 'paid') {
+export async function drawItem(userId: string, source: 'free' | 'paid', category: SupplyCategory = 'pixelPet') {
   return prisma.$transaction(async (tx) => {
     const drawRefId = `${source}:${Date.now()}`
 
@@ -191,16 +194,16 @@ export async function drawItem(userId: string, source: 'free' | 'paid') {
     ).map((c) => c.itemId)
 
     const pool = await tx.supplyItem.findMany({
-      where: { rarity, id: { notIn: ownedIds.length > 0 ? ownedIds : undefined } },
+      where: { category, rarity, id: { notIn: ownedIds.length > 0 ? ownedIds : undefined } },
     })
 
     let item = pool.length > 0
       ? pool[Math.floor(Math.random() * pool.length)]
-      : await tx.supplyItem.findFirst({ where: { rarity } })
+      : await tx.supplyItem.findFirst({ where: { category, rarity } })
 
     if (!item) {
-      // fallback：任意稀有度物品
-      const fallback = await tx.supplyItem.findMany()
+      // fallback：同 category 任意稀有度物品
+      const fallback = await tx.supplyItem.findMany({ where: { category } })
       item = fallback[Math.floor(Math.random() * fallback.length)]
     }
 
@@ -277,9 +280,12 @@ export async function equipItem(userId: string, itemId: number | null) {
       data: { isEquipped: false },
     })
 
+    let equippedCategory: string | null = null
+
     if (itemId) {
       const collection = await tx.userCollection.findUnique({
         where: { userId_itemId: { userId, itemId } },
+        include: { item: true },
       })
       if (!collection) {
         throw new Error('未拥有该补给品')
@@ -288,9 +294,10 @@ export async function equipItem(userId: string, itemId: number | null) {
         where: { userId_itemId: { userId, itemId } },
         data: { isEquipped: true },
       })
+      equippedCategory = collection.item.category
     }
 
-    return { equippedItemId: itemId }
+    return { equippedItemId: itemId, equippedCategory }
   })
 }
 
@@ -299,4 +306,24 @@ export async function getEquippedItem(userId: string) {
     where: { userId, isEquipped: true },
     include: { item: true },
   })
+}
+
+export async function getAllCollection(userId: string) {
+  const items = await prisma.supplyItem.findMany({
+    orderBy: { id: 'asc' },
+  })
+
+  const userItems = await prisma.userCollection.findMany({
+    where: { userId },
+    include: { item: true },
+  })
+
+  const userMap = new Map(userItems.map((u) => [u.itemId, u]))
+
+  return items.map((item) => ({
+    ...item,
+    obtainedAt: userMap.get(item.id)?.obtainedAt ?? null,
+    isEquipped: userMap.get(item.id)?.isEquipped ?? false,
+    collected: userMap.has(item.id),
+  }))
 }

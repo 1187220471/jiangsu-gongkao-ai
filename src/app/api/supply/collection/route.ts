@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth'
-import { getCollection } from '@/lib/supply'
+import { getCollection, getAllCollection, type SupplyCategory } from '@/lib/supply'
 
 export const dynamic = 'force-dynamic'
+
+const VALID_CATEGORIES: SupplyCategory[] = ['pixelPet', 'nbaStar']
 
 export async function GET(request: Request) {
   try {
@@ -11,7 +13,12 @@ export async function GET(request: Request) {
       return auth.response
     }
 
-    const items = await getCollection(auth.userId)
+    const { searchParams } = new URL(request.url)
+    const category = searchParams.get('category')
+
+    const items = category === 'all'
+      ? await getAllCollection(auth.userId)
+      : await getCollection(auth.userId, (VALID_CATEGORIES.includes(category as SupplyCategory) ? category : 'pixelPet') as SupplyCategory)
 
     return NextResponse.json({
       items,

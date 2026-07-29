@@ -11,6 +11,9 @@ export async function GET(request: Request) {
       return auth.response
     }
 
+    const { searchParams } = new URL(request.url)
+    const category = searchParams.get('category') || 'pixelPet'
+
     const [balance, equipped, freeDrawUsedToday] = await Promise.all([
       getBalance(auth.userId),
       getEquippedItem(auth.userId),
@@ -20,12 +23,14 @@ export async function GET(request: Request) {
     return NextResponse.json({
       balance,
       freeDrawUsedToday,
+      category,
       equippedItem: equipped
         ? {
                 id: equipped.item.id,
                 name: equipped.item.name,
                 imageUrl: equipped.item.imageUrl,
                 rarity: equipped.item.rarity,
+                category: equipped.item.category,
               }
         : null,
     })

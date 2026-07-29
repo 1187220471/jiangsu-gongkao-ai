@@ -226,8 +226,8 @@ model PointsLog {
 
 model SupplyItem {
   id          Int      @id @default(autoincrement())
-  category    String // pixelPet
-  rarity      String // common / rare / epic / legendary
+  category    String // pixelPet / nbaStar
+  rarity      String // common / rare
   name        String   @unique
   description String?
   imageUrl    String
@@ -235,6 +235,7 @@ model SupplyItem {
   createdAt   DateTime @default(now())
   userCollections UserCollection[]
 
+  @@index([category, rarity])
   @@map("supply_item")
 }
 
