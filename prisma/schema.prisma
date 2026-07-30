@@ -254,6 +254,22 @@ model UserCollection {
   @@map("user_collection")
 }
 
+// 分享奖励：被分享者免费抽令牌
+model ShareReward {
+  id          Int       @id @default(autoincrement())
+  sharerId    String    // 分享者 ID
+  itemId      Int       // 分享的物品 ID
+  token       String    @unique // 唯一令牌，用于被分享者兑换
+  claimedAt   DateTime? // 何时被领取
+  claimedBy   String?   // 领取者 ID
+  expiresAt   DateTime  // 过期时间（72小时）
+  createdAt   DateTime  @default(now())
+
+  @@index([token])
+  @@index([sharerId])
+  @@map("share_reward")
+}
+
 model FocusSession {
   id            Int       @id @default(autoincrement())
   userId        String
