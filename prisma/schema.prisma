@@ -254,19 +254,20 @@ model UserCollection {
   @@map("user_collection")
 }
 
-// 分享奖励：被分享者免费抽令牌
+// 分享奖励：分享卡携带的一次性免费抽令牌
 model ShareReward {
   id          Int       @id @default(autoincrement())
   sharerId    String    // 分享者 ID
   itemId      Int       // 分享的物品 ID
   token       String    @unique // 唯一令牌，用于被分享者兑换
-  claimedAt   DateTime? // 何时被领取
+  claimedAt   DateTime? // 被分享者领取时间
   claimedBy   String?   // 领取者 ID
+  redeemedAt  DateTime? // 免费抽实际使用时间
   expiresAt   DateTime  // 过期时间（72小时）
   createdAt   DateTime  @default(now())
 
   @@index([token])
-  @@index([sharerId])
+  @@index([sharerId, createdAt])
   @@map("share_reward")
 }
 

@@ -146,9 +146,60 @@ export async function getCollection(userId: string, category: SupplyCategory = '
   }))
 }
 
-export async function drawItem(userId: string, source: 'free' | 'paid', category: SupplyCategory = 'pixelPet') {
+export async function drawItem(
+  userId: string,
+  source: 'free' | 'paid' | 'share',
+  category: SupplyCategory = 'pixelPet',
+  shareToken?: string
+) {
   return prisma.$transaction(async (tx) => {
-    const drawRefId = `${source}:${Date.now()}`
+    let shareRewardId: number | null = null
+    let sharerId: string | null = null
+    let drawCategory = category
+    const drawRefId = source === 'share' ? `share:${shareToken}` : `${source}:${Date.now()}`
+
+    if (source === 'share') {
+      if (!shareToken) {
+        throw new Error('分享奖励无效')
+      }
+
+      const shareReward = await tx.shareReward.findUnique({
+        where: { token: shareToken },
+      })
+      if (!shareReward || shareReward.expiresAt < new Date()) {
+        throw new Error('分享奖励已失效')
+      }
+      if (shareReward.sharerId === userId) {
+        throw new Error('不能领取自己的分享奖励')
+      }
+      if (shareReward.claimedBy || shareReward.redeemedAt) {
+        throw new Error(shareReward.redeemedAt ? '分享奖励已使用' : '分享奖励已领取')
+      }
+
+      const shareItem = await tx.supplyItem.findUnique({
+        where: { id: shareReward.itemId },
+        select: { category: true },
+      })
+      if (!shareItem) {
+        throw new Error('分享物品不存在')
+      }
+
+      shareRewardId = shareReward.id
+      sharerId = shareReward.sharerId
+      drawCategory = shareItem.category as SupplyCategory
+      const claimed = await tx.shareReward.updateMany({
+        where: {
+          id: shareReward.id,
+          claimedBy: null,
+          redeemedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: { claimedAt: new Date(), claimedBy: userId },
+      })
+      if (claimed.count !== 1) {
+        throw new Error('分享奖励已领取')
+      }
+    }
 
     // 检查今日免费次数
     if (source === 'free') {
@@ -183,7 +234,7 @@ export async function drawItem(userId: string, source: 'free' | 'paid', category
     }
 
     // 按稀有度抽奖
-    const rarity = rollRarity(source)
+    const rarity = rollRarity(source === 'share' ? 'free' : source)
 
     // 获取该稀有度下用户未拥有的物品
     const ownedIds = (
@@ -194,16 +245,16 @@ export async function drawItem(userId: string, source: 'free' | 'paid', category
     ).map((c) => c.itemId)
 
     const pool = await tx.supplyItem.findMany({
-      where: { category, rarity, id: { notIn: ownedIds.length > 0 ? ownedIds : undefined } },
+      where: { category: drawCategory, rarity, id: { notIn: ownedIds.length > 0 ? ownedIds : undefined } },
     })
 
     let item = pool.length > 0
       ? pool[Math.floor(Math.random() * pool.length)]
-      : await tx.supplyItem.findFirst({ where: { category, rarity } })
+      : await tx.supplyItem.findFirst({ where: { category: drawCategory, rarity } })
 
     if (!item) {
       // fallback：同 category 任意稀有度物品
-      const fallback = await tx.supplyItem.findMany({ where: { category } })
+      const fallback = await tx.supplyItem.findMany({ where: { category: drawCategory } })
       item = fallback[Math.floor(Math.random() * fallback.length)]
     }
 
@@ -231,7 +282,7 @@ export async function drawItem(userId: string, source: 'free' | 'paid', category
         data: {
           userId,
           itemId: item.id,
-          source: source === 'free' ? 'freeDraw' : 'paidDraw',
+          source: source === 'share' ? 'share' : source === 'free' ? 'freeDraw' : 'paidDraw',
         },
       })
     }
@@ -244,6 +295,36 @@ export async function drawItem(userId: string, source: 'free' | 'paid', category
         refId: drawRefId,
       },
     })
+
+    if (shareRewardId) {
+      await tx.shareReward.update({
+        where: { id: shareRewardId },
+        data: { redeemedAt: new Date() },
+      })
+
+      if (sharerId) {
+        await tx.userPoints.upsert({
+          where: { userId: sharerId },
+          update: {
+            balance: { increment: POINTS_REWARDS.share },
+            totalEarned: { increment: POINTS_REWARDS.share },
+          },
+          create: {
+            userId: sharerId,
+            balance: POINTS_REWARDS.share,
+            totalEarned: POINTS_REWARDS.share,
+          },
+        })
+        await tx.pointsLog.create({
+          data: {
+            userId: sharerId,
+            amount: POINTS_REWARDS.share,
+            type: 'share',
+            refId: `share:${shareToken}`,
+          },
+        })
+      }
+    }
 
     const pointsRecord = await tx.userPoints.findUnique({ where: { userId } })
     const balance = pointsRecord?.balance ?? 0

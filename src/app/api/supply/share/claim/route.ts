@@ -20,42 +20,35 @@ export async function POST(request: Request) {
 
     const userId = auth.userId
 
-    // 查找未过期的分享奖励
     const shareReward = await prisma.shareReward.findUnique({
       where: { token },
     })
 
-    if (!shareReward) {
-      return NextResponse.json({ error: '链接无效或已失效' }, { status: 404 })
+    if (!shareReward || shareReward.expiresAt < new Date()) {
+      return NextResponse.json({ error: '链接无效或已过期' }, { status: 400 })
     }
 
-    if (shareReward.expiresAt < new Date()) {
-      return NextResponse.json({ error: '链接已过期' }, { status: 400 })
+    if (shareReward.sharerId === userId) {
+      return NextResponse.json({ error: '不能领取自己的分享奖励' }, { status: 400 })
     }
 
-    if (shareReward.claimedAt) {
-      return NextResponse.json({ error: '已被领取过啦～' }, { status: 400 })
+    if (shareReward.redeemedAt) {
+      return NextResponse.json({ error: '分享奖励已使用' }, { status: 400 })
     }
 
-    // 标记已领取
-    await prisma.shareReward.update({
-      where: { id: shareReward.id },
-      data: {
-        claimedAt: new Date(),
-        claimedBy: userId,
-      },
-    })
-
-    // 获取分享的物品信息
     const item = await prisma.supplyItem.findUnique({
       where: { id: shareReward.itemId },
     })
+    if (!item) {
+      return NextResponse.json({ error: '分享物品不存在' }, { status: 404 })
+    }
 
     return NextResponse.json({
       success: true,
+      claimed: Boolean(shareReward.claimedBy),
       reward: {
         type: 'freeDraw',
-        description: `你获得了 ${item?.name || '神秘补给品'} 的免费���机会！`,
+        description: `你获得了 ${item.name} 的免费抽机会！`,
       },
       sharerId: shareReward.sharerId,
       item,

@@ -14,11 +14,18 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { source, category = 'pixelPet' } = body
+    const { source, category = 'pixelPet', shareToken } = body
 
-    if (!source || (source !== 'free' && source !== 'paid')) {
+    if (!source || (source !== 'free' && source !== 'paid' && source !== 'share')) {
       return NextResponse.json(
-        { error: 'source 必须是 free 或 paid' },
+        { error: 'source 必须是 free、paid 或 share' },
+        { status: 400 }
+      )
+    }
+
+    if (source === 'share' && (typeof shareToken !== 'string' || !shareToken)) {
+      return NextResponse.json(
+        { error: '分享奖励无效' },
         { status: 400 }
       )
     }
@@ -30,7 +37,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const result = await drawItem(auth.userId, source, category)
+    const result = await drawItem(auth.userId, source, category, shareToken)
 
     return NextResponse.json({
       success: true,
