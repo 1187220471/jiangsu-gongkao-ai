@@ -10,6 +10,7 @@
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
+    "test": "node --experimental-test-module-mocks --import tsx --test src/lib/*.test.ts",
     "postinstall": "prisma generate"
   },
   "prisma": {
