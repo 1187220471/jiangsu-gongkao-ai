@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import SupplyBalanceCard from '@/components/SupplyBalanceCard'
 
 interface ProfileData {
   user: {
@@ -238,6 +239,9 @@ export default function Profile() {
             </div>
           </div>
         </div>
+
+        {/* 学习点 */}
+        <SupplyBalanceCard />
 
         {/* 邀请权限状态卡片 */}
         <div className="card-pixel p-6">

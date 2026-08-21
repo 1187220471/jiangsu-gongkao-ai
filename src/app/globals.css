@@ -225,3 +225,268 @@ body {
   background: #d1d5db;
   border-radius: 3px;
 }
+
+/* ============ 补给站抽卡机 ============ */
+@keyframes machineLight {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+}
+
+@keyframes reelSpin {
+  0% {
+    transform: translateY(-60%);
+  }
+  100% {
+    transform: translateY(60%);
+  }
+}
+
+@keyframes leverPull {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(-22deg);
+  }
+}
+
+@keyframes resultPop {
+  0% {
+    transform: scale(0.7);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes poolBounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.supply-machine {
+  position: relative;
+  border: 3px solid #1f2937;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #f3f4f6 0%, #e5e7eb 100%);
+  box-shadow: 0 4px 0 #9ca3af, 0 6px 16px rgba(0, 0, 0, 0.12);
+  padding: 20px 16px 0;
+  overflow: hidden;
+}
+
+.supply-machine-lights {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-around;
+  pointer-events: none;
+}
+
+.supply-machine-light {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #facc15;
+  box-shadow: 0 0 6px rgba(250, 204, 21, 0.8);
+  animation: machineLight 1.2s infinite;
+}
+
+.supply-reel-row {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.supply-reel-window {
+  width: 88px;
+  height: 88px;
+  border: 3px solid #1f2937;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.supply-reel-img {
+  width: 68px;
+  height: 68px;
+  object-fit: contain;
+  transition: opacity 0.15s;
+}
+
+.supply-reel-img.spinning {
+  animation: reelSpin 0.1s linear infinite;
+}
+
+.supply-reel-img.capsule {
+  opacity: 0.85;
+  animation: poolBounce 1.6s infinite;
+}
+
+.supply-lever {
+  position: absolute;
+  right: 14px;
+  top: 62px;
+  width: 36px;
+  height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform-origin: top center;
+  cursor: pointer;
+  transition: transform 0.25s;
+}
+
+.supply-lever.pulled {
+  animation: leverPull 0.5s ease-in-out;
+}
+
+.supply-lever-ball {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 3px solid #7f1d1d;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+.supply-lever-stick {
+  width: 10px;
+  height: 46px;
+  background: #6b7280;
+  border: 2px solid #374151;
+  border-radius: 4px;
+  margin-top: -2px;
+}
+
+.supply-sticker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  margin: 12px 0 2px;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.supply-sticker-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.supply-slot {
+  height: 8px;
+  background: #374151;
+  border-radius: 4px 4px 0 0;
+  margin-top: 10px;
+}
+
+.supply-result-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.supply-result-card {
+  background: #ffffff;
+  border: 3px solid #1f2937;
+  border-radius: 18px;
+  box-shadow: 0 8px 0 rgba(17, 24, 39, 0.25);
+  padding: 28px 40px;
+  text-align: center;
+  animation: resultPop 0.3s ease-out;
+  max-width: 320px;
+}
+
+.supply-pool-card {
+  flex-shrink: 0;
+  width: 96px;
+  background: #ffffff;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 10px 8px;
+  text-align: center;
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.supply-pool-card:hover {
+  transform: translateY(-2px);
+  border-color: #9ca3af;
+}
+
+.supply-pool-card.locked {
+  background: #f9fafb;
+  border-style: dashed;
+}
+
+/* ============ 专注番茄钟 ============ */
+@keyframes focusBreathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+.focus-countdown-ring {
+  position: relative;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  margin: 0 auto;
+}
+
+.focus-ring-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  transition: background 0.3s linear;
+}
+
+.focus-ring-inner {
+  position: absolute;
+  inset: 14px;
+  background: #ffffff;
+  border: 2px solid #e5e7eb;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  animation: focusBreathe 3s ease-in-out infinite;
+}
+
+.focus-mascot-breathe {
+  animation: focusBreathe 2.4s ease-in-out infinite;
+}
