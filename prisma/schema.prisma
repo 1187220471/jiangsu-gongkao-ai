@@ -285,3 +285,14 @@ model FocusSession {
   @@index([userId, startedAt])
   @@map("focus_session")
 }
+
+// 每周素材积累（时评文章摘录，每周一抓取）
+model WeeklyMaterial {
+  id        Int      @id @default(autoincrement())
+  week      String   @unique // 周标识 = 该周周一日期（北京时间），如 "2026-09-28"
+  articles  String   // JSON 数组：topic/title/source/url/publishDate/quotes/content/analysis
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("weekly_material")
+}

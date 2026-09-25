@@ -205,6 +205,13 @@ export default function Home() {
       route: '/daily-news',
       features: ['每日更新', 'AI精选', '公考素材', '热点追踪'],
     },
+    {
+      title: '每周素材积累',
+      subtitle: '时评精选 · 金句摘录 · 大作文素材',
+      icon: '📚',
+      route: '/materials',
+      features: ['每周更新', '金句提炼', '时评全文', 'AI点评'],
+    },
   ]
 
   return (
