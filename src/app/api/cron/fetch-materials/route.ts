@@ -35,6 +35,9 @@ function withinDays(dateStr: string | undefined, days: number): boolean {
   return Date.now() - d.getTime() <= days * 86400000
 }
 
+// 日期兜底窗口：主要防重复靠跨周 URL 去重，此窗口仅挡极旧陈文
+const DATE_WINDOW_DAYS = 30
+
 const MATERIAL_SITES = [
   {
     name: '共产党员网·投稿推荐',
@@ -60,7 +63,7 @@ const MATERIAL_SITES = [
       let m
       while ((m = re.exec(html)) && results.length < 12) {
         const date = `${m[2]}-${m[3]}-${m[4]}`
-        if (!withinDays(date, 10)) continue // 只取近 10 天
+        if (!withinDays(date, DATE_WINDOW_DAYS)) continue // 宽窗口兜底，防重复靠跨周 URL 去重
         results.push({ title: m[5].trim(), url: 'https:' + m[1], publishDate: date })
       }
       return results
@@ -80,7 +83,7 @@ const MATERIAL_SITES = [
         const timeM = block.match(/<div class="time">([\d-]+)[\s\d:]*<\/div>/)
         if (!urlM || !titleM) continue
         const date = timeM ? timeM[1] : undefined
-        if (!withinDays(date, 10)) continue
+        if (!withinDays(date, DATE_WINDOW_DAYS)) continue
         results.push({
           title: titleM[1].trim(),
           url: urlM[1],
@@ -298,6 +301,20 @@ export async function GET(request: NextRequest) {
 
     console.log(`[${new Date().toISOString()}] 开始抓取每周素材 (week=${weekKey})...`)
 
+    // 0. 加载历史全部已入库文章 URL（跨周去重：更新慢的站点不会重复入库旧文）
+    const pastRows = await prisma.weeklyMaterial.findMany({ select: { articles: true } })
+    const historicalUrls = new Set<string>()
+    for (const r of pastRows) {
+      try {
+        for (const a of JSON.parse(r.articles) as { url: string }[]) {
+          if (a?.url) historicalUrls.add(a.url)
+        }
+      } catch {
+        // 单期数据损坏不影响整体
+      }
+    }
+    console.log(`📚 历史已入库文章：${historicalUrls.size} 篇`)
+
     // 1. 并行抓三站列表
     const listResults = await Promise.all(
       MATERIAL_SITES.map(async (site) => {
@@ -315,7 +332,7 @@ export async function GET(request: NextRequest) {
     for (const r of listResults) {
       if (r.error) siteErrors.push(`${r.site}: ${r.error}`)
       for (const item of r.items) {
-        if (seen.has(item.url)) continue
+        if (seen.has(item.url) || historicalUrls.has(item.url)) continue
         seen.add(item.url)
         pending.push({
           title: item.title,
