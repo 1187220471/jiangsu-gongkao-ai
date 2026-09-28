@@ -16,10 +16,16 @@ interface MaterialArticle {
   analysis: string
 }
 
+interface WeekOption {
+  week: string
+  count: number
+}
+
 interface MaterialsData {
   week: string
   articles: MaterialArticle[]
   updatedAt: string
+  availableWeeks: WeekOption[]
 }
 
 const TOPIC_COLORS: Record<string, string> = {
@@ -48,16 +54,28 @@ export default function MaterialsPage() {
   const [error, setError] = useState('')
   const [activeTopic, setActiveTopic] = useState('全部')
 
-  useEffect(() => {
-    fetch('/api/materials/weekly')
+  const loadMaterials = (week?: string) => {
+    setLoading(true)
+    setError('')
+    setActiveTopic('全部')
+    const url = week ? `/api/materials/weekly?week=${week}` : '/api/materials/weekly'
+    fetch(url)
       .then((res) => {
-        if (!res.ok) throw new Error(res.status === 404 ? '本周素材尚未生成，请稍后再来' : '获取素材失败')
+        if (!res.ok) throw new Error(res.status === 404 ? '该周素材尚未生成' : '获取素材失败')
         return res.json()
       })
       .then((d) => setData(d))
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadMaterials()
   }, [])
+
+  const handleWeekChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (data && e.target.value !== data.week) loadMaterials(e.target.value)
+  }
 
   const topics = data ? ['全部', ...Array.from(new Set(data.articles.map((a) => a.topic)))] : ['全部']
   const filtered =
@@ -105,16 +123,34 @@ export default function MaterialsPage() {
       </header>
 
       <div className="max-w-4xl mx-auto px-4">
-        {/* 周期信息 */}
-        <div className="mt-5 mb-4 flex items-center justify-between">
+        {/* 周期信息 + 历史周切换 */}
+        <div className="mt-5 mb-4 flex items-center justify-between gap-4">
           <div>
             <p className="text-sm text-gray-600">
-              本周素材（<span className="font-medium text-gray-800">{data.week}</span> 当周）
+              {data.week} 当周素材
+              {data.week !== data.availableWeeks[0]?.week && (
+                <span className="ml-2 text-xs text-gray-400">（历史归档）</span>
+              )}
             </p>
             <p className="text-xs text-gray-400 mt-0.5">
               共 {data.articles.length} 篇 · 摘录自公开时评，注明来源 · 点击标题可读原文
             </p>
           </div>
+          {data.availableWeeks.length > 1 && (
+            <div className="shrink-0">
+              <select
+                value={data.week}
+                onChange={handleWeekChange}
+                className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 cursor-pointer focus:outline-none focus:border-blue-400"
+              >
+                {data.availableWeeks.map((w) => (
+                  <option key={w.week} value={w.week}>
+                    {w.week} 当周（{w.count} 篇）
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* 主题筛选 */}
