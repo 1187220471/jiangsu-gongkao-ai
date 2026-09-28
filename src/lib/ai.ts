@@ -345,7 +345,16 @@ function getRandomTopic(type: string, excludeTopics: string[] = [], excludeDomai
   return candidatePool[idx]
 }
 
+// 旧版小程序客户端（1.0.2 已发布）的题型 id 别名，规范到标准 7 类 id
+const TYPE_ALIASES: Record<string, string> = {
+  comprehensive: 'social', // 旧"综合分析" = 社会现象+态度观点
+  planning: 'organize',
+  simulation: 'situational',
+  material: 'social',
+}
+
 export async function generateQuestion(type: string, excludeTopics: string[] = [], excludeDomains: string[] = []): Promise<{ question: string; topic: string; domain: string }> {
+  const normalizedType = TYPE_ALIASES[type] || type
   const typeMap: Record<string, string> = {
     'social': '社会现象类',
     'attitude': '态度观点类',
@@ -356,10 +365,10 @@ export async function generateQuestion(type: string, excludeTopics: string[] = [
     'situational': '情景模拟类',
   }
 
-  const typeName = typeMap[type] || '社会现象类'
-  
+  const typeName = typeMap[normalizedType] || '社会现象类'
+
   // 【核心改进】由代码确定性地选择一个主题，不再给AI 5个候选让它"随机"选
-  const selectedTopic = getRandomTopic(type, excludeTopics, excludeDomains)
+  const selectedTopic = getRandomTopic(normalizedType, excludeTopics, excludeDomains)
 
   const systemPrompt = `你是一位资深江苏省公务员面试命题专家，精通江苏省考面试的命题风格和特点。你需要生成一道高质量的江苏省公务员结构化面试题。
 
