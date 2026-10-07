@@ -667,15 +667,20 @@ export async function evaluateAnswer(question: string, referenceAnswer: string, 
 - 中档 5-7分：表达基本清楚，但偶有卡顿、重复、口头禅，或部分用词不够规范
 - 好档 8-10分：用词准确，表达流畅，有感染力，适当兼顾政府公文语体与群众语言
 
-【改进版答案要求】
-在评分和点评之后，基于用户答案的逻辑框架生成改进版答案：
-1. 保留用户答案中正确、有价值的观点和思路
-2. 在用户自己的逻辑框架内补充遗漏的要点或维度
-3. 在用户自己的表达习惯里优化不够规范、不够具体的地方
-4. 修正逻辑不通或跑偏的内容
-5. 如果用户用了自己的分点方式（如"第一""一方面"），保留并优化
-6. 改进版答案要像"用户自己写得更优秀的版本"，而非重写为标准参考答案
-7. 语言风格引导向政府公文语体，但尊重用户的个人表达习惯
+【改进版答案要求——最高优先级】
+你的任务不是"写一份标准答案"，而是"把用户这份答案改得更优秀"。以用户答案为底稿做编辑，而不是重写。
+
+硬性约束：
+1. 保留用户答案的分点数量与顺序（用户分了3点，改进版仍是这3点、顺序不变）；仅当用户逻辑存在实质性错误（跑题、逻辑矛盾、要点归错类）时方可调整，且必须在 evaluation 中说明原因
+2. 保留用户的开头方式、结尾方式与惯用表述（如"作为一名基层工作人员……"），只做规范化润色
+3. 只允许四类修改：补上遗漏的要点或维度、修正逻辑不通或跑偏之处、把不够规范的用词改为政府公文语体、把笼统的地方具体化
+4. 严禁照抄参考答案的句式、分点结构与表述；严禁引入用户原答案中不存在的新观点骨架
+5. 用户答案本身较好时，改进版的改动幅度应当很小——只做局部替换，不整段代写
+
+输出前自检（不输出自检过程）：
+- 改进版的分点数量与顺序，是否与用户原答案一致？
+- 是否只做了"局部改写"，而非"另起炉灶"？
+- 与参考答案并排看，是否明显不同？若几乎一致，说明写偏了，请重写。
 
 【批改输出要求】
 1. 先判断题型，再判断用户答案在各维度的档位（差档/中档/好档），然后给分
@@ -689,7 +694,7 @@ export async function evaluateAnswer(question: string, referenceAnswer: string, 
 
 重要：evaluation和improvedAnswer字段中的内容不要包含JSON引号，使用纯文本。`
 
-  const userPrompt = `面试题目：\n${question}\n\n参考答案（独行侠波铁标准答案）：\n${referenceAnswer}\n\n用户答案：\n${userAnswer}\n\n请批改：\n1. 判断题型（社会现象/态度观点/调研/活动组织/试点推广/专项整治/应急应变/人际关系/劝说疏导/情景模拟/自我认知）\n2. 通读用户答案全文，判断各维度表现属于哪个档位（差档/中档/好档），在档位区间内给分\n3. 注意区分"思路不同但言之有理"和"答非所问"\n4. 组织管理/应急应变/人际关系类不要要求"多维度分析"，重点是"怎么做"\n5. 情景模拟类评分重点是"沟通感"和"临场感"\n6. 改进版答案保留用户逻辑框架，像"用户自己写得更优秀的版本"\n7. 返回JSON：{"score":数字,"evaluation":"点评","improvedAnswer":"改进版答案"}`
+  const userPrompt = `面试题目：\n${question}\n\n用户答案（改进版以此稿为底稿）：\n${userAnswer}\n\n参考答案（仅供要点核对与评分参照；严禁在改进版中照抄其句式、分点结构与表述）：\n${referenceAnswer}\n\n请批改：\n1. 判断题型（社会现象/态度观点/调研/活动组织/试点推广/专项整治/应急应变/人际关系/劝说疏导/情景模拟/自我认知）\n2. 通读用户答案全文，判断各维度表现属于哪个档位（差档/中档/好档），在档位区间内给分\n3. 注意区分"思路不同但言之有理"和"答非所问"\n4. 组织管理/应急应变/人际关系类不要要求"多维度分析"，重点是"怎么做"\n5. 情景模拟类评分重点是"沟通感"和"临场感"\n6. 改进版答案：以用户答案为底稿"编辑"而非"重写"，保留其分点数量与顺序、开头结尾方式；只做"补要点、修逻辑、规范化、具体化"四类修改，严禁照抄参考答案\n7. 返回JSON：{"score":数字,"evaluation":"点评","improvedAnswer":"改进版答案"}`
 
   const response = await callAI([
     { role: 'system', content: systemPrompt },
@@ -890,6 +895,47 @@ export interface ShenlunEvaluationResult {
   improvedAnswer: string
 }
 
+/**
+ * 申论「改进版答案」独立生成。
+ * 关键：**不传入参考答案**——避免模型把参考答案的句式与结构搬过来，
+ * 确保改进版是「用户原答案的升级版」而非「另一份标准答案」。
+ */
+export async function generateShenlunImprovedAnswer(
+  questionText: string,
+  materials: ShenlunMaterialInput[],
+  questionType: string,
+  wordLimit: string | null,
+  userAnswer: string
+): Promise<string> {
+  const materialsText = materials.map(m => `【给定资料${m.materialNum}】\n${m.content}`).join('\n\n')
+
+  const systemPrompt = `你是一位资深江苏省公务员申论阅卷老师。本次只做一件事：把用户提交的答案**改写得更优秀**。不评分、不点评、不输出任何解释。
+
+【核心原则：编辑，不是重写】
+用户答案就是底稿。你的产出应当读起来像"这位考生自己写出的升级版"，而不是另一份标准答案。
+
+硬性约束：
+1. 保留用户答案的分点数量与顺序（用户分3点，改进版仍是这3点、顺序不变）。**只有**当用户逻辑存在实质性错误（要点归错类、逻辑矛盾、明显跑题）时才允许调整，且幅度必须最小
+2. 保留用户的开头方式、结尾方式与惯用表述（如"我觉得""有三种做法"），只做规范化润色，不要改写成全新的公文腔开头
+3. 只允许四类修改：① 补上用户遗漏、但材料中的关键得分点（补在最贴合的位置，不另起结构）；② 修正逻辑不通或跑偏之处；③ 把口语化用词规范为申论语言；④ 把笼统表述具体化
+4. 不得引入用户原答案中不存在的新框架或新分类维度；不得把用户的并列结构改成层次结构（或反之）
+5. 篇幅尽量符合题干字数要求；输出**只有改进版答案正文**，不要标题、不要评分、不要任何说明文字
+
+【输出前自检（不输出自检过程）】
+- 分点数量与顺序是否与用户原答案一致？
+- 开头是否仍是用户的说法（只是更规范）？
+- 是否只是"局部改写 + 补要点"，而非"另起炉灶"？
+若以上任一条不满足，请重写。`
+
+  const userPrompt = `【题干】\n${questionText}\n\n【题型】${questionType}\n\n${wordLimit ? `【字数要求】${wordLimit}\n\n` : ''}【给定材料】\n${materialsText}\n\n【用户答案（这是底稿，请在此基础上改写）】\n${userAnswer}\n\n请输出改进版答案正文：`
+
+  const response = await callAI([
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ], 0.5)
+  return (response || '').trim()
+}
+
 export async function evaluateShenlunAnswer(
   questionText: string,
   materials: ShenlunMaterialInput[],
@@ -938,26 +984,34 @@ export async function evaluateShenlunAnswer(
   "sentenceComments": [
     { "sentence": "用户答案中的原句", "comment": "这句的批改意见" }
   ],
-  "evaluation": "整体点评，分优点、不足、漏点三部分",
-  "improvedAnswer": "基于用户答案逻辑优化后的改进版"
+  "evaluation": "整体点评，分优点、不足、漏点三部分"
 }
 
 【重要规则】
 1. 总分必须是 0-${fullScore} 之间的整数
 2. 各维度得分加起来应等于或接近总分
 3. 要点完整性维度扣分要克制，有小遗漏但方向正确不大幅扣分
-4. 改进版答案必须基于用户原有逻辑，不强制重写为标准答案
-5. 改进版答案要尽量符合字数要求
-6. 点评要具体、建设性，优点和不足都要写
-7. 逐句批改时，如果指出用户缺少某个要点或表述不够准确，必须引用该要点在材料中的原文作为依据，格式为「材料原文：……」
-8. 不要输出 JSON 之外的任何文字`
+4. 点评要具体、建设性，优点和不足都要写
+5. 逐句批改时，如果指出用户缺少某个要点或表述不够准确，必须引用该要点在材料中的原文作为依据，格式为「材料原文：……」
+6. 不要输出 JSON 之外的任何文字`
 
-  const userPrompt = `【题干】\n${questionText}\n\n【题型】${questionType}\n\n【分值】${fullScore}分\n\n${wordLimit ? `【字数要求】${wordLimit}\n\n` : ''}【给定材料】\n${materialsText}\n\n【标准参考答案】\n${referenceAnswer}\n\n【参考名师答案】\n${referenceText}\n\n【用户答案】\n${userAnswer}\n\n请按工作流批改，以标准参考答案为评分依据，输出 JSON 格式结果。`
+  const userPrompt = `【题干】\n${questionText}\n\n【题型】${questionType}\n\n【分值】${fullScore}分\n\n${wordLimit ? `【字数要求】${wordLimit}\n\n` : ''}【给定材料】\n${materialsText}\n\n【用户答案】\n${userAnswer}\n\n【标准参考答案】（评分与要点核对依据）\n${referenceAnswer}\n\n【参考名师答案】\n${referenceText}\n\n请按工作流批改：评分与逐句批改以标准参考答案为要点依据。输出 JSON 格式结果。`
 
-  const response = await callAI([
-    { role: 'system', content: systemPrompt },
-    { role: 'user', content: userPrompt },
-  ], 0.4)
+  // 并行发起：① 评分/逐句批改（用参考答案）② 改进版答案（不传参考答案）
+  // 改进版单独生成，避免模型照搬参考答案的句式与结构
+  const [response, improvedAnswer] = await Promise.all([
+    callAI([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ], 0.4).catch((e) => {
+      console.error('Shenlun evaluate error:', e)
+      return ''
+    }),
+    generateShenlunImprovedAnswer(questionText, materials, questionType, wordLimit, userAnswer).catch((e) => {
+      console.error('Shenlun improved answer error:', e)
+      return ''
+    }),
+  ])
 
   try {
     const jsonMatch = response.match(/\{[\s\S]*\}/)
@@ -976,7 +1030,7 @@ export async function evaluateShenlunAnswer(
       dimensionScores,
       sentenceComments: Array.isArray(result.sentenceComments) ? result.sentenceComments : [],
       evaluation: result.evaluation || '批改完成',
-      improvedAnswer: result.improvedAnswer || '改进版答案生成中...',
+      improvedAnswer: improvedAnswer || '改进版答案生成失败，请参考点评建议自行优化。',
     }
   } catch {
     return {
@@ -989,7 +1043,7 @@ export async function evaluateShenlunAnswer(
       },
       sentenceComments: [],
       evaluation: `批改过程出现异常，原始返回如下：\n\n${response}`,
-      improvedAnswer: '生成失败',
+      improvedAnswer: improvedAnswer || '生成失败',
     }
   }
 }
