@@ -1,9 +1,9 @@
 /**
  * 申论真题数据入库脚本
- * 从项目根目录下的 .workbuddy/knowledge/jiangsu-shenlun-2018-2025-merged.json
- * 读取 2018-2025 年江苏申论真题，写入 ShenlunQuestion / ShenlunMaterial / ShenlunTeacherAnswer
+ * 读取 .workbuddy/knowledge/ 下全部 jiangsu-shenlun-*.json（如 2018-2025、2026），
+ * 写入 ShenlunQuestion / ShenlunMaterial / ShenlunTeacherAnswer
  *
- * 运行方式（在项目根目录）：
+ * 运行方式（在项目根目录 daijinli-web）：
  * npx tsx prisma/seed-shenlun.ts
  */
 
@@ -13,7 +13,23 @@ import * as path from 'path'
 
 const prisma = new PrismaClient()
 
-const DATA_PATH = path.join(process.cwd(), '.workbuddy', 'knowledge', 'jiangsu-shenlun-2018-2025-merged.json')
+/** 定位知识库目录（兼容 cwd 为 daijinli-web 或工作区根目录两种情况） */
+function resolveDataFiles(): string[] {
+  const candidates = [
+    path.join(process.cwd(), '.workbuddy', 'knowledge'),
+    path.join(process.cwd(), '..', '.workbuddy', 'knowledge'),
+  ]
+  for (const dir of candidates) {
+    if (!fs.existsSync(dir)) continue
+    const files = fs
+      .readdirSync(dir)
+      .filter((f) => /^jiangsu-shenlun-.*\.json$/.test(f))
+      .sort()
+      .map((f) => path.join(dir, f))
+    if (files.length > 0) return files
+  }
+  return []
+}
 
 interface RawAnswer {
   teacher: string
@@ -46,13 +62,17 @@ function toExamDate(year: string): string {
 }
 
 async function main() {
-  if (!fs.existsSync(DATA_PATH)) {
-    console.error(`数据文件不存在: ${DATA_PATH}`)
+  const dataFiles = resolveDataFiles()
+  if (dataFiles.length === 0) {
+    console.error('未找到申论数据文件（.workbuddy/knowledge/jiangsu-shenlun-*.json）')
     process.exit(1)
   }
 
-  const rawData: RawExam[] = JSON.parse(fs.readFileSync(DATA_PATH, 'utf-8'))
-  console.log(`读取到 ${rawData.length} 套申论真题`)
+  const rawData: RawExam[] = dataFiles.flatMap((f) => {
+    console.log(`  读取 ${path.basename(f)}`)
+    return JSON.parse(fs.readFileSync(f, 'utf-8')) as RawExam[]
+  })
+  console.log(`读取到 ${rawData.length} 套申论真题（来自 ${dataFiles.length} 个文件）`)
 
   let examCount = 0
   let questionCount = 0
@@ -106,8 +126,15 @@ async function main() {
       })
 
       // 2. 清空旧关联数据（保证可重复执行）
+      //    名师答案仅删除本次将要写入的同名条目，保留其他来源（如由
+      //    seed-shenlun-reference-answers.ts 生成的 “AI参考答案”），避免误删
       await prisma.shenlunMaterial.deleteMany({ where: { questionId: question.id } })
-      await prisma.shenlunTeacherAnswer.deleteMany({ where: { questionId: question.id } })
+      const incomingTeachers = (q.answers || []).map((a) => a.teacher || '未知')
+      if (incomingTeachers.length > 0) {
+        await prisma.shenlunTeacherAnswer.deleteMany({
+          where: { questionId: question.id, teacherName: { in: incomingTeachers } },
+        })
+      }
 
       // 3. 写入材料
       const qMaterials = q.materials || {}
