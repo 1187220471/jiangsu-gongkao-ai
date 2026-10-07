@@ -20,6 +20,7 @@ export async function GET(request: Request) {
           id: true,
           questionType: true,
           question: true,
+          referenceAnswer: true,
           userAnswer: true,
           evaluation: true,
           improvedAnswer: true,

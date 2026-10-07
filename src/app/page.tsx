@@ -199,6 +199,13 @@ export default function Home() {
       features: ['历年真题', '给定材料', '名师答案', 'AI批改'],
     },
     {
+      title: '练习记录',
+      subtitle: '历史答题 · AI批改 · 成绩追踪',
+      icon: '🗂️',
+      route: '/history',
+      features: ['历史记录', '批改回顾', '成绩追踪', '持续改进'],
+    },
+    {
       title: '每日政务要闻',
       subtitle: '江苏政务 · AI精选 · 备考积累',
       icon: '📰',

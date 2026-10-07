@@ -61,6 +61,36 @@ export default function History() {
     return 'text-red-600'
   }
 
+  const typeLabel = (t: string) =>
+    QUESTION_TYPE_LABELS[t as keyof typeof QUESTION_TYPE_LABELS] || t
+
+  // 区分记录来源：申论（shenlun-前缀）/ 真题复盘（question 带 [真题#id] 标记）/ 面试练习
+  const getSourceInfo = (record: Record) => {
+    if (record.questionType?.startsWith('shenlun-')) {
+      return { source: '申论', type: record.questionType.replace('shenlun-', ''), badge: 'bg-green-100 text-green-700' }
+    }
+    if (record.question?.startsWith('[真题#')) {
+      return { source: '真题复盘', type: typeLabel(record.questionType), badge: 'bg-purple-100 text-purple-700' }
+    }
+    return { source: '面试练习', type: typeLabel(record.questionType), badge: 'bg-primary-100 text-primary-700' }
+  }
+
+  const stripQuestionMark = (q: string) => (q || '').replace(/^\[真题#\d+\]\s*/, '')
+
+  const renderSourceBadges = (record: Record) => {
+    const info = getSourceInfo(record)
+    return (
+      <>
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${info.badge}`}>
+          {info.source}
+        </span>
+        <span className="bg-slate-100 text-slate-600 text-xs font-medium px-2 py-0.5 rounded-full">
+          {info.type}
+        </span>
+      </>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
@@ -120,16 +150,14 @@ export default function History() {
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="bg-primary-100 text-primary-700 text-xs font-medium px-2 py-0.5 rounded-full">
-                          {QUESTION_TYPE_LABELS[record.questionType as keyof typeof QUESTION_TYPE_LABELS] || record.questionType}
-                        </span>
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        {renderSourceBadges(record)}
                         <span className="text-xs text-slate-400">
                           {formatDate(record.createdAt)}
                         </span>
                       </div>
                       <p className="text-slate-700 text-sm line-clamp-2">
-                        {record.question}
+                        {stripQuestionMark(record.question)}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -156,7 +184,7 @@ export default function History() {
                         题目
                       </h4>
                       <div className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">
-                        {record.question}
+                        {stripQuestionMark(record.question)}
                       </div>
                     </div>
 

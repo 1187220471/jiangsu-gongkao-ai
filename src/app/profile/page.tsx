@@ -362,6 +362,23 @@ export default function Profile() {
           </div>
         </div>
 
+        {/* 练习记录 */}
+        <button
+          onClick={() => router.push('/history')}
+          className="card-pixel card-active w-full p-6 flex items-center justify-between text-left"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="text-2xl">🗂️</span>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-slate-800">练习记录</h3>
+              <p className="text-sm text-slate-500 mt-0.5 truncate">
+                查看历史答题记录与 AI 批改结果
+              </p>
+            </div>
+          </div>
+          <span className="text-slate-400 shrink-0">→</span>
+        </button>
+
         {/* 意见反馈 */}
         <div className="card-pixel p-6">
           <h3 className="text-base font-bold text-slate-800 mb-4">意见反馈</h3>
