@@ -149,11 +149,33 @@ function extractBodyText(html: string, maxLen = 6000): string {
     .replace(/<style[\s\S]*?<\/style>/gi, '')
     .replace(/<!--[\s\S]*?-->/g, '')
   const plain = decodeHtmlEntities(cleaned.replace(/<[^>]+>/g, '\n'))
+  // 噪声判定：短行做更严格的过滤（导航/来源/作者单位/页面标题等），长行仅通用黑名单
+  const META_NOISE =
+    /(tel\s*[:：])|负责制作维护|版权所有|ICP备|责任编辑|纠错：|扫码|扫描二维码|copyright|all rights reserved/i
+  const SHORT_NOISE_PREFIX =
+    /^(来源|发布时间|时间|日期|编辑|作者|审核|监审|责编|浏览量|阅读量|分享|打印|字号|上一篇|下一篇|返回|相关阅读|推荐阅读|热点|专题|更多|首页|登录|注册|搜索|评论|点赞|收藏)\s*[:：]?/
+  const SHORT_NOISE_EXTRA = /组织部|宣传部|纪委监委|机关党委|作者单位|通讯员|积分|距下一级|您需要登录/
+  const PAGE_TITLE = /_.{2,12}网$/
+  const HAS_CN = /[\u4e00-\u9fa5]/
+  const seen = new Set<string>()
   const lines = plain
     .split('\n')
     .map((l) => l.replace(/\s+/g, ' ').trim())
-    .filter((l) => l.length >= 40)
-    .filter((l) => !/(tel\s*[:：])|负责制作维护|版权所有|ICP备|责任编辑|纠错：|扫码|扫描二维码|copyright|all rights reserved/i.test(l))
+    // ⚠️ 不能按长度丢弃短行：时评的分论点常是 15~30 字的排比小标题，一旦被丢
+    //    AI 就只能自行概括，导致「分论点提取不准」。改为按噪声特征过滤。
+    .filter((l) => {
+      if (l.length < 12) return false
+      if (META_NOISE.test(l)) return false
+      if (l.length < 40) {
+        if (SHORT_NOISE_PREFIX.test(l)) return false
+        if (SHORT_NOISE_EXTRA.test(l)) return false
+        if (PAGE_TITLE.test(l)) return false
+        if (!HAS_CN.test(l)) return false
+      }
+      if (seen.has(l)) return false
+      seen.add(l)
+      return true
+    })
 
   // 尾部修剪：从结尾向前剔除页脚特征段落（法律顾问声明、联系方式等，最多 5 段防误删）
   const FOOTER_PARA =
@@ -213,7 +235,7 @@ async function aiCurate(articles: { title: string; source: string; body: string 
   const articlesText = articles
     .map(
       (a, i) =>
-        `【第${i + 1}篇】标题：${sanitizeForJSON(a.title)}（来源：${sanitizeForJSON(a.source)}）\n正文摘录：${sanitizeForJSON(a.body.slice(0, 2000))}`
+        `【第${i + 1}篇】标题：${sanitizeForJSON(a.title)}（来源：${sanitizeForJSON(a.source)}）\n正文摘录：${sanitizeForJSON(a.body.slice(0, 4000))}`
     )
     .join('\n\n')
 
@@ -221,8 +243,15 @@ async function aiCurate(articles: { title: string; source: string; body: string 
 
 对每篇输出：
 1. topic：从考情主题清单中选最贴切的一个主题名；确实不属于任何主题时可自拟简短主题名（4-6字）
-2. thesis：全文总论点（1句，不超过40字）。优先从首段摘录原文原句（首段末尾的中心句通常是总论点）；首段无明确论点句时才归纳，归纳须忠实原文立意
-3. subPoints：全文分论点（2-4个，每个不超过30字）。优先逐段摘录各段段首中心句原句（时评常见排比/对仗结构）；原文分论点为隐性递进结构时才归纳提纯，保持简练对仗
+2. thesis：全文总论点。**原样摘录**原文中最能概括全文立意的中心句（通常是首段末句），一个字都不改；原文确实没有可作为总论点的原句时才归纳。可到 50 字
+3. subPoints：全文分论点（2-5 个）。**必须先"定位"再"原样摘录"——严禁自己概括、改写、压缩，也不得为追求对仗/简练而增删或替换词语。**
+   定位方法：分论点通常是原文中**句式并列、字数相近的一组句子**，常见形态：
+   ① 正文各层次的小标题（单独成行，如「用心察民情，在躬身一线中夯实为民根基。」）
+   ② 各段段首的排比句／对仗句（如「要…要…要…」「一是…二是…三是…」「既…又…」）
+   ③ 各段段尾收束的中心句
+   请先通读全文，把这类候选句子按出现顺序抓出来，再从中选出构成全文骨架的 2-5 句。摘录时逐字照抄（可保留句末标点），单句可到 60 字。
+   ⚠️ 反例（严禁）：原文是「用心察民情，在躬身一线中夯实为民根基」，却输出「俯身下沉走进群众，扎实开展调查研究，摸清真实底数」——这是改写，不是摘录。
+   仅当通篇确实不存在并列论点句时，才允许归纳，且归纳须尽量复用原文措辞
 4. quotes：从原文摘录 2-3 句最值得积累的金句（保持原文，每句不超过 60 字，不与 thesis/subPoints 重复）
 5. analysis：80-120字点评——这篇文章的论证结构（如"总-分-总""排比铺陈""正反对比"）、可套用的申论题型或面试场景
 
