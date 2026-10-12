@@ -9,98 +9,137 @@ export const fetchCache = 'force-no-store'
 
 // ============ 网站配置 ============
 
-function extractDate(url: string, _html: string): string {
-  const patterns = [
-    /t(\d{4})(\d{2})(\d{2})_/,
-    /\/(\d{4})(\d{2})\//,
-    /\/(\d{4})-(\d{2})-(\d{2})\//,
-    /\/(\d{4})\/(\d{2})(\d{2})\//,
-  ]
-  for (const p of patterns) {
-    const m = url.match(p)
-    if (m) return `${m[1]}-${m[2]}-${m[3]}`
-  }
-  const today = new Date()
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+// ============ 日期解析 ============
+
+/** 只保留近 N 天发布的新闻（有日期但超期 → 丢弃；无日期 → 保留并标注「日期未知」） */
+const RECENT_DAYS = 3
+const UNKNOWN_DATE = '日期未知'
+
+const DATE_PATTERNS: RegExp[] = [
+  /t(\d{4})(\d{2})(\d{2})_/, // t20261012_
+  /\/(\d{4})\/(\d{2})\/(\d{2})\//, // /2026/10/12/
+  /\/(\d{4})\/(\d{2})(\d{2})\//, // /2026/1012/
+  /\/(\d{4})-(\d{2})-(\d{2})\//, // /2026-10-12/
+]
+
+function validYmd(y: string, m: string, d: string): string | null {
+  const yy = +y, mm = +m, dd = +d
+  if (yy < 2020 || yy > 2030 || mm < 1 || mm > 12 || dd < 1 || dd > 31) return null
+  return `${y}-${m}-${d}`
 }
 
-const SITES = [
+/**
+ * 从 URL 解析发布日期。
+ * ⚠️ 解析不出时返回 null —— 绝不兜底为「今天」（旧实现兜底为今天，导致 53% 的新闻
+ *    日期被伪造为抓取当天）。
+ */
+function dateFromUrl(url: string): string | null {
+  for (const p of DATE_PATTERNS) {
+    const m = url.match(p)
+    if (m) {
+      const v = validYmd(m[1], m[2], m[3])
+      if (v) return v
+    }
+  }
+  // 新华报业网/交汇点：/content/s<24位hex>.html，前 8 位 hex 即 MongoDB ObjectId 时间戳
+  const oid = url.match(/\/s([0-9a-f]{24})\.html/i)
+  if (oid) {
+    const ts = parseInt(oid[1].slice(0, 8), 16) * 1000
+    if (ts > 1577836800000 && ts < 1893456000000) {
+      // 转为北京时间自然日
+      return new Date(ts + 8 * 3600 * 1000).toISOString().slice(0, 10)
+    }
+  }
+  return null
+}
+
+/** 相对/协议相对链接 → 绝对链接 */
+function absUrl(origin: string, href: string): string {
+  if (href.startsWith('//')) return 'https:' + href
+  if (href.startsWith('http')) return href
+  if (href.startsWith('/')) return origin + href
+  return origin + '/' + href.replace(/^\.\//, '')
+}
+
+/** 北京时间「今天」 */
+function beijingToday(): string {
+  return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10)
+}
+
+/** 导航/栏目类噪声标题 */
+const NOISE_TITLE = /^(要闻|时政|国内|国际|社会|评论|观点|图片|视频|专题|更多|首页|登录|注册|·?\s*更\s*多\s*·?|.*&middot;.*|.*&nbsp;.*)$/
+
+interface NewsLink {
+  title: string
+  url: string
+  source: string
+}
+
+interface SiteConfig {
+  name: string
+  url: string
+  encoding: 'utf-8' | 'gb2312'
+  origin: string
+  /** 文章链接形态（收紧后天然排除导航/栏目链接，且 URL 自带日期） */
+  href?: RegExp
+  /** 结构特殊的站点自定义提取 */
+  custom?: (html: string) => NewsLink[]
+}
+
+/**
+ * 通用提取器：只接受「符合该站真实文章 URL 形态」的链接。
+ * 收紧链接形态可一并解决两个问题——排除导航/栏目链接，且 URL 自带日期。
+ */
+function extractAnchors(html: string, origin: string, source: string, hrefPattern: RegExp, limit = 15): NewsLink[] {
+  const results: NewsLink[] = []
+  const re = /<a[^>]*href="([^"]+)"[^>]*>([^<]{8,90})<\/a>/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(html)) && results.length < limit) {
+    if (!hrefPattern.test(m[1])) continue
+    const title = m[2].replace(/<[^>]+>/g, '').replace(/&[a-z]+;/gi, '').trim()
+    if (!title || title.length < 8 || NOISE_TITLE.test(title)) continue
+    results.push({ title, url: absUrl(origin, m[1]), source })
+  }
+  return results
+}
+
+const SITES: SiteConfig[] = [
   {
     name: '江苏省人民政府网',
     url: 'https://www.jiangsu.gov.cn/',
     encoding: 'utf-8' as const,
-    extract: (html: string) => {
-      const results: any[] = []
-      const regex = /<a[^>]*href="([^"]*\/art\/[^"]*)"[^>]*>([^<]{10,80})<\/a>/gi
-      let match
-      while ((match = regex.exec(html)) && results.length < 15) {
-        const url = match[1]
-        results.push({
-          title: match[2].replace(/<[^>]+>/g, '').trim(),
-          url: url.startsWith('http') ? url : 'https://www.jiangsu.gov.cn' + url,
-          source: '江苏省人民政府网',
-          date: extractDate(url, ''),
-        })
-      }
-      return results
-    },
+    origin: 'https://www.jiangsu.gov.cn',
+    href: /\/art\/\d{4}\/\d{2}\/\d{2}\/art_\d+_\d+\.html/,
   },
   {
     name: '中共江苏省委新闻网',
     url: 'http://www.zgjssw.gov.cn/',
     encoding: 'utf-8' as const,
-    extract: (html: string) => {
-      const results: any[] = []
-      const regex = /<a[^>]*href="([^"]*(?:yaowen|fabuting|zhiduhuibian)[^"]*)"[^>]*>([^<]{10,80})<\/a>/gi
-      let match
-      while ((match = regex.exec(html)) && results.length < 15) {
-        const url = match[1]
-        results.push({
-          title: match[2].replace(/<[^>]+>/g, '').trim(),
-          url: url.startsWith('http') ? url : 'http://www.zgjssw.gov.cn' + url,
-          source: '中共江苏省委新闻网',
-          date: extractDate(url, ''),
-        })
-      }
-      return results
-    },
+    origin: 'http://www.zgjssw.gov.cn',
+    href: /\/(?:yaowen|fabuting|zhiduhuibian)\/\d{6}\/t\d{8}_\d+\.shtml/,
   },
   {
     name: '中国江苏网',
     url: 'https://jsnews.jschina.com.cn/jsyw/',
     encoding: 'utf-8' as const,
-    extract: (html: string) => {
-      const results: any[] = []
-      const regex = /<a[^>]*href="([^"]*\/jsyw\/[^"]*)"[^>]*>([^<]{10,80})<\/a>/gi
-      let match
-      while ((match = regex.exec(html)) && results.length < 15) {
-        const url = match[1]
-        results.push({
-          title: match[2].replace(/<[^>]+>/g, '').trim(),
-          url: url.startsWith('http') ? url : 'https:' + url,
-          source: '中国江苏网',
-          date: extractDate(url, html),
-        })
-      }
-      return results
-    },
+    origin: 'https://jsnews.jschina.com.cn',
+    href: /\/jsyw\/\d{6}\/t\d{8}_[0-9a-z]+/,
   },
   {
+    // 该站 URL 无日期，但 ID 是 MongoDB ObjectId（前 8 位 hex 可解出发布时间）
     name: '新华报业网',
     url: 'https://www.xhby.net/xjiangsu',
     encoding: 'utf-8' as const,
-    extract: (html: string) => {
-      const results: any[] = []
-      const regex = /<div class="article-li"[^>]*>[\s\S]*?<a[^>]*href="([^"]*\/content\/s[0-9a-z]+\.html)"[^>]*>[\s\S]*?<div class="title">([^<]{10,80})<\/div>/gi
-      let match
-      while ((match = regex.exec(html)) && results.length < 15) {
-        const url = match[1]
-        results.push({
-          title: match[2].replace(/<[^>]+>/g, '').trim(),
-          url: url.startsWith('http') ? url : 'https:' + url,
-          source: '新华报业网',
-          date: extractDate(url, html),
-        })
+    origin: 'https://www.xhby.net',
+    custom: (html: string): NewsLink[] => {
+      const results: NewsLink[] = []
+      const re =
+        /<div class="article-li"[^>]*>[\s\S]*?<a[^>]*href="([^"]*\/content\/s[0-9a-f]{24}\.html)"[^>]*>[\s\S]*?<div class="title">([^<]{8,90})<\/div>/gi
+      let m: RegExpExecArray | null
+      while ((m = re.exec(html)) && results.length < 15) {
+        const title = m[2].replace(/<[^>]+>/g, '').trim()
+        if (!title || NOISE_TITLE.test(title)) continue
+        results.push({ title, url: absUrl('https://www.xhby.net', m[1]), source: '新华报业网' })
       }
       return results
     },
@@ -109,45 +148,19 @@ const SITES = [
     name: '中国新闻网|江苏',
     url: 'https://www.js.chinanews.com.cn/',
     encoding: 'gb2312' as const,
-    extract: (html: string) => {
-      const results: any[] = []
-      const simpleRegex = /<a[^>]*href="([^"]*\/news\/[^"]*)"[^>]*>([^<]{10,80})<\/a>/gi
-      let match
-      while ((match = simpleRegex.exec(html)) && results.length < 15) {
-        const url = match[1]
-        results.push({
-          title: match[2].replace(/<[^>]+>/g, '').trim(),
-          url: url.startsWith('http') ? url : 'https://www.js.chinanews.com.cn' + url,
-          source: '中国新闻网|江苏',
-          date: extractDate(url, html),
-        })
-      }
-      return results
-    },
+    origin: 'https://www.js.chinanews.com.cn',
+    href: /\/news\/\d{4}\/\d{4}\/\d+\.html/,
   },
   {
     name: '扬子晚报网',
     url: 'https://www.yzwb.net/',
     encoding: 'utf-8' as const,
-    extract: (html: string) => {
-      const results: any[] = []
-      const simpleRegex = /<a[^>]*href="([^"]*\/news\/[^"]*)"[^>]*>([^<]{10,80})<\/a>/gi
-      let match
-      while ((match = simpleRegex.exec(html)) && results.length < 15) {
-        const url = match[1]
-        results.push({
-          title: match[2].replace(/<[^>]+>/g, '').trim(),
-          url: url.startsWith('http') ? url : 'https://www.yzwb.net' + url,
-          source: '扬子晚报网',
-          date: extractDate(url, html),
-        })
-      }
-      return results
-    },
+    origin: 'https://www.yzwb.net',
+    href: /\/news\/\w+\/\d{6}\/t\d{8}_\d+\.html/,
   },
 ]
 
-async function fetchSite(site: typeof SITES[0]) {
+async function fetchSite(site: SiteConfig) {
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 15000)
@@ -168,7 +181,10 @@ async function fetchSite(site: typeof SITES[0]) {
 
     const buffer = await response.arrayBuffer()
     const html = new TextDecoder(site.encoding || 'utf-8').decode(buffer)
-    const results = site.extract(html)
+    const links = site.custom ? site.custom(html) : extractAnchors(html, site.origin, site.name, site.href!)
+
+    // 统一解析发布日期：解析不出 → 标注「日期未知」（绝不兜底为今天）
+    const results = links.map((l) => ({ ...l, date: dateFromUrl(l.url) ?? UNKNOWN_DATE }))
 
     return { site: site.name, results, count: results.length }
   } catch (err: any) {
@@ -229,7 +245,7 @@ ${formatThemesForPrompt()}
   "allNews": [
     {
       "title": "新闻标题",
-      "date": "YYYY-MM-DD",
+      "date": "原样回填输入的日期（形如 2026-10-12，或「日期未知」）",
       "source": "来源网站",
       "score": 7.5,
       "url": "新闻链接"
@@ -239,7 +255,7 @@ ${formatThemesForPrompt()}
     {
       "topic": "主题分类（从考情主题中选：基层治理/乡村振兴/政务服务/民生保障/执法法治/科技数字化/文化建设/新业态治理/安全应急/生态环保/区域协调/经济发展等）",
       "title": "新闻标题",
-      "date": "YYYY-MM-DD",
+      "date": "原样回填输入的日期（形如 2026-10-12，或「日期未知」）",
       "source": "来源网站",
       "score": 9.5,
       "intro": "100-150字简介",
@@ -253,6 +269,7 @@ ${formatThemesForPrompt()}
 2. topNews 从 allNews 中精选8-12条，每条必须附带100-150字简介
 3. 两个列表的新闻不要重复计算，topNews是allNews的子集
 4. 必须返回完整、合法的JSON，不要截断，确保最后一个括号闭合
+5. **date 必须原样回填输入中该条新闻的日期**，不得改写、不得推测；输入为「日期未知」时原样输出「日期未知」
 
 新闻列表（共${cleanedItems.length}条）：
 ${cleanedItems.map((n, i) => `${i + 1}. [${n.date}] [${n.source}] ${n.title} | ${n.url}`).join('\n')}`
@@ -337,9 +354,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 检查今天是否已经有数据
-    const now = new Date()
-    const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000)
-    const today = beijingTime.toISOString().split('T')[0]
+    const today = beijingToday()
     const existing = await prisma.dailyNews.findUnique({
       where: { date: today },
     })
@@ -382,9 +397,16 @@ export async function GET(request: NextRequest) {
       return true
     })
 
-    console.log(`📊 原始抓取: ${rawNews.length} 条，去重后: ${uniqueNews.length} 条`)
+    // 时效过滤：有日期但超出 RECENT_DAYS 天的丢弃；「日期未知」的保留（前端标注）
+    const cutoff = new Date(Date.now() + 8 * 3600 * 1000 - RECENT_DAYS * 86400000).toISOString().slice(0, 10)
+    const recentNews = uniqueNews.filter((n) => n.date === UNKNOWN_DATE || n.date >= cutoff)
+    const unknownCount = recentNews.filter((n) => n.date === UNKNOWN_DATE).length
 
-    if (uniqueNews.length === 0) {
+    console.log(
+      `📊 原始抓取: ${rawNews.length} 条，去重后: ${uniqueNews.length} 条，时效过滤后: ${recentNews.length} 条（丢弃旧闻 ${uniqueNews.length - recentNews.length} 条，日期未知 ${unknownCount} 条）`
+    )
+
+    if (recentNews.length === 0) {
       logStatus = 'failed'
       logMessage = '未抓取到任何新闻'
       logDetail = siteErrors.join('; ')
@@ -396,7 +418,7 @@ export async function GET(request: NextRequest) {
 
     // 2. AI过滤精选
     console.log('🤖 开始AI过滤...')
-    const aiResult = await aiFilter(uniqueNews, apiKey)
+    const aiResult = await aiFilter(recentNews, apiKey)
     const topNews = aiResult.topNews || []
     const allNews = aiResult.allNews || []
 
