@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { jsonrepair } from 'jsonrepair'
 import { prisma } from '@/lib/db'
 import { CORE_THEMES, SECONDARY_THEMES } from '@/lib/newsThemes'
+import { requireCronSecret } from '@/lib/cronAuth'
 
 // 强制动态渲染，防止边缘缓存
 export const dynamic = 'force-dynamic'
@@ -315,6 +316,9 @@ ${articlesText}
 // ============ Cron 入口 ============
 
 export async function GET(request: NextRequest) {
+  const cronDenied = requireCronSecret(request)
+  if (cronDenied) return cronDenied
+
   const startTime = Date.now()
   let logStatus = 'success'
   let logMessage = ''

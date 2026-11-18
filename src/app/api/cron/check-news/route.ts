@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { requireCronSecret } from '@/lib/cronAuth'
 
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
 
 export async function GET(request: NextRequest) {
+  const cronDenied = requireCronSecret(request)
+  if (cronDenied) return cronDenied
+
   try {
     // 获取要检查的日期，默认昨天
     const url = new URL(request.url)
