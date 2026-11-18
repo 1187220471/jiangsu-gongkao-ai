@@ -16,10 +16,15 @@ interface Record {
   createdAt: string
 }
 
+const PAGE_SIZE = 20
+
 export default function History() {
   const router = useRouter()
   const [records, setRecords] = useState<Record[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -29,20 +34,56 @@ export default function History() {
       return
     }
 
-    fetch('/api/history', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.records) {
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/history?page=1&pageSize=${PAGE_SIZE}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json()
+        if (!cancelled && data.records) {
           setRecords(data.records)
+          setTotal(data.total || 0)
         }
-        setLoading(false)
-      })
-      .catch(() => {
-        setLoading(false)
-      })
+      } catch {
+        // 保留空列表，不阻塞页面
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
   }, [router])
+
+  const loadMore = async () => {
+    if (loadingMore) return
+    const token = localStorage.getItem('token')
+    if (!token) {
+      router.push('/login')
+      return
+    }
+
+    setLoadingMore(true)
+    try {
+      const next = page + 1
+      const res = await fetch(`/api/history?page=${next}&pageSize=${PAGE_SIZE}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (data.records) {
+        setRecords((prev) => [...prev, ...data.records])
+        setTotal(data.total || 0)
+        setPage(next)
+      }
+    } catch {
+      // 失败保持当前列表
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
@@ -235,6 +276,18 @@ export default function History() {
                 )}
               </div>
             ))}
+
+            {records.length < total && (
+              <div className="pt-2 text-center">
+                <button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="px-6 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-600 hover:border-primary-300 hover:text-primary-600 disabled:opacity-60 transition-colors"
+                >
+                  {loadingMore ? '加载中…' : `加载更多（还有 ${total - records.length} 条）`}
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
