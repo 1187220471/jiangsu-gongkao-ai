@@ -28,3 +28,6 @@ npm-debug.log*
 
 # Test/dev scripts
 scripts/
+
+# 备份包不入库（曾含 .env）
+*.zip
