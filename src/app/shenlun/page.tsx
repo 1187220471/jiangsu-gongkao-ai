@@ -117,6 +117,39 @@ export default function ShenlunPage() {
       </header>
 
       <div className="max-w-5xl mx-auto px-4 py-6">
+        {/* 上传入口 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+          <button
+            onClick={() => router.push('/shenlun/upload')}
+            className="flex items-center gap-3 w-full px-4 py-4 rounded-2xl bg-slate-900 text-white hover:bg-slate-800 transition-colors shadow-sm text-left"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-lg leading-none">
+              ＋
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold">上传试卷</span>
+              <span className="block text-[11px] text-slate-300 mt-0.5">
+                上传 PDF，自动切题并生成参考答案
+              </span>
+            </span>
+          </button>
+
+          <button
+            onClick={() => router.push('/shenlun/mine')}
+            className="flex items-center gap-3 w-full px-4 py-4 rounded-2xl bg-white border border-slate-200 text-slate-700 hover:border-primary-400 hover:text-primary-600 hover:bg-primary-50/40 transition-colors text-left"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-lg leading-none">
+              📁
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold">我的试卷</span>
+              <span className="block text-[11px] text-slate-400 mt-0.5">
+                查看已上传的材料、题目与答案
+              </span>
+            </span>
+          </button>
+        </div>
+
         {/* 筛选栏 */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-6">
           <div className="flex flex-wrap gap-3 items-center">

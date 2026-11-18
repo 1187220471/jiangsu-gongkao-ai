@@ -11,7 +11,7 @@
     "db:studio": "prisma studio",
     "db:seed": "tsx prisma/seed.ts",
     "test": "node --experimental-test-module-mocks --import tsx --test src/lib/*.test.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate && node scripts/copy-pdf-worker.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -32,6 +32,7 @@
     "jsonrepair": "^3.14.0",
     "jsonwebtoken": "^9.0.2",
     "next": "^14.1.0",
+    "pdfjs-dist": "^4.8.69",
     "postcss": "^8.4.35",
     "prisma": "^5.22.0",
     "react": "^18.2.0",

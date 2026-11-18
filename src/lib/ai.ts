@@ -3,7 +3,19 @@ export interface AIMessage {
   content: string
 }
 
-export async function callAI(messages: AIMessage[], temperature = 0.7): Promise<string> {
+export interface CallAIOptions {
+  maxTokens?: number
+  timeoutMs?: number
+  retries?: number
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+export async function callAI(
+  messages: AIMessage[],
+  temperature = 0.7,
+  options: CallAIOptions = {}
+): Promise<string> {
   const apiKey = process.env.DEEPSEEK_API_KEY || process.env.DASHSCOPE_API_KEY
   const baseUrl = process.env.DEEPSEEK_BASE_URL || process.env.DASHSCOPE_BASE_URL || 'https://api.deepseek.com'
 
@@ -11,27 +23,64 @@ export async function callAI(messages: AIMessage[], temperature = 0.7): Promise<
     throw new Error('AI API Key not configured')
   }
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: process.env.DEEPSEEK_API_KEY ? 'deepseek-chat' : 'qwen-max',
-      messages,
-      temperature,
-      max_tokens: 2500,
-    }),
-  })
+  const { maxTokens = 2500, timeoutMs = 60000, retries = 0 } = options
 
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`AI API error: ${error}`)
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+    try {
+      const response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: process.env.DEEPSEEK_API_KEY ? 'deepseek-chat' : 'qwen-max',
+          messages,
+          temperature,
+          max_tokens: maxTokens,
+        }),
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        const error = await response.text()
+        const retryable = response.status === 429 || response.status >= 500
+        if (retryable && attempt < retries) {
+          await sleep(800)
+          continue
+        }
+        throw new Error(`AI API error: ${error}`)
+      }
+
+      const data = await response.json()
+      const content = data?.choices?.[0]?.message?.content
+      if (typeof content !== 'string' || !content.trim()) {
+        throw new Error('AI API error: empty response')
+      }
+      return content
+    } catch (err) {
+      const isAbort = err instanceof Error && err.name === 'AbortError'
+      if (isAbort) {
+        if (attempt < retries) {
+          await sleep(800)
+          continue
+        }
+        throw new Error('AI_TIMEOUT')
+      }
+      if (attempt < retries) {
+        await sleep(800)
+        continue
+      }
+      throw err
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
-  const data = await response.json()
-  return data.choices[0].message.content
+  throw new Error('AI API error: retries exhausted')
 }
 
 // 各题型可选主题领域，用于丰富出题多样性
@@ -756,7 +805,8 @@ export async function generateShenlunReferenceAnswer(
   questionType: string,
   fullScore: number,
   wordLimit: string | null,
-  referenceAnswers: ShenlunTeacherAnswerInput[]
+  referenceAnswers: ShenlunTeacherAnswerInput[],
+  opts?: { maxCalibrationRounds?: number; deadlineAt?: number; maxTokens?: number }
 ): Promise<string> {
   const materialsText = materials.map(m => `【给定资料${m.materialNum}】\n${m.content}`).join('\n\n')
   const referenceText = referenceAnswers.map(a => `【${a.teacherName}答案】\n${a.answerText}`).join('\n\n')
@@ -787,9 +837,22 @@ export async function generateShenlunReferenceAnswer(
 7. 严禁使用 Markdown 格式（如 **、#、- 等），只输出纯文本
 8. 只输出参考答案文本，不要输出任何额外说明`
 
+  // 题型未识别时的通用作答要求：避免 5 条题型指引全部落空
+  const KNOWN_SHENLUN_TYPES = ['归纳概括', '综合分析', '提出对策', '贯彻执行', '大作文', '经验总结']
+  const typeFallback = KNOWN_SHENLUN_TYPES.includes(questionType)
+    ? ''
+    : `
+
+9. 本题题型未明确标注，请按申论通用标准作答：
+   - 先写一句总括句点明核心观点
+   - 再分 3-5 条展开，每条采用「观点 + 依据」结构
+   - 关键词齐全、分类合理、语言凝练，不写空话套话`
+
   let limit = parseWordLimit(wordLimit)
-  // 大作文（>500字）强制按用户最新要求：900-1100字，最好1000-1100字
-  const isEssay = limit && typeof limit.max === 'number' && limit.max > 500
+  // 大作文：字数上限 >500，或题型明确标注为大作文
+  const isEssay =
+    (limit && typeof limit.max === 'number' && limit.max > 500) ||
+    questionType === '大作文'
   if (isEssay) {
     limit = { min: 900, max: 1100 }
   }
@@ -799,9 +862,9 @@ export async function generateShenlunReferenceAnswer(
   const userPrompt = `【题干】\n${questionText}\n\n【题型】${questionType}\n\n【分值】${fullScore}分\n\n${wordLimit ? `【字数要求】${wordLimit}（${limitHint}，这是硬性要求）\n\n` : ''}【给定材料】\n${materialsText}\n\n【参考名师答案】\n${referenceText}\n\n请生成标准参考答案。生成后请自检字数，确保严格落在目标字数范围内。`
 
   const response = await callAI([
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: systemPrompt + typeFallback },
     { role: 'user', content: userPrompt },
-  ], 0.3)
+  ], 0.3, { maxTokens: opts?.maxTokens ?? 2500 })
 
   let answer = response.trim()
 
@@ -810,7 +873,9 @@ export async function generateShenlunReferenceAnswer(
 
   // 字数校准：超长压缩，过短扩展，循环直到合规
   if (limit) {
-    for (let i = 0; i < 3; i++) {
+    const rounds = opts?.maxCalibrationRounds ?? 3
+    for (let i = 0; i < rounds; i++) {
+      if (opts?.deadlineAt && Date.now() > opts.deadlineAt) break
       const currentChars = answer.length
       const maxChars = typeof limit.max === 'number' ? limit.max : 0
       const minChars = typeof limit.min === 'number' ? limit.min : 0
@@ -873,6 +938,30 @@ function parseWordLimit(wordLimit: string | null): { min?: number; max?: number 
   return null
 }
 
+/**
+ * 超长时优先在句末/分句处截断，避免答案出现"说到一半"的情况。
+ */
+function cutAtSentence(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text
+
+  const head = text.slice(0, maxChars)
+
+  let sentenceEnd = -1
+  for (const mark of ['。', '！', '？', '；']) {
+    sentenceEnd = Math.max(sentenceEnd, head.lastIndexOf(mark))
+  }
+  if (sentenceEnd >= maxChars * 0.7) {
+    return head.slice(0, sentenceEnd + 1)
+  }
+
+  const clauseEnd = Math.max(head.lastIndexOf('，'), head.lastIndexOf('、'), head.lastIndexOf(','))
+  if (clauseEnd >= maxChars * 0.85) {
+    return head.slice(0, clauseEnd) + '。'
+  }
+
+  return head
+}
+
 async function compressAnswer(answer: string, wordLimit: string, maxChars: number): Promise<string> {
   const systemPrompt = `你是一位申论答案压缩专家。请在保持答案完整性、结构性和要点齐全的前提下，将以下答案压缩到指定字数以内。只输出压缩后的文本，不要输出任何说明。`
   const userPrompt = `【字数要求】${wordLimit}，当前 ${answer.length} 字，请压缩到 ${maxChars} 字以内。\n\n${answer}\n\n请输出压缩后的答案。`
@@ -883,9 +972,9 @@ async function compressAnswer(answer: string, wordLimit: string, maxChars: numbe
   ], 0.2)
 
   let compressed = response.trim()
-  // 如果仍然超长，简单截断（保留完整性优先）
+  // 仍然超长时在句末断开，避免出现"说到一半"的答案
   if (compressed.length > maxChars) {
-    compressed = compressed.slice(0, maxChars)
+    compressed = cutAtSentence(compressed, maxChars)
   }
   return compressed
 }

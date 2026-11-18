@@ -25,6 +25,7 @@ model User {
   userPoints       UserPoints?
   userCollections  UserCollection[]
   focusSessions    FocusSession[]
+  shenlunPapers    ShenlunPaper[]
 }
 
 model Record {
@@ -295,4 +296,50 @@ model WeeklyMaterial {
   updatedAt DateTime @updatedAt
 
   @@map("weekly_material")
+}
+
+// 用户上传的申论试卷（私有，与公共题库完全隔离）
+model ShenlunPaper {
+  id             String   @id @default(uuid())
+  userId         String
+  title          String
+  examYear       Int?
+  examCategory   String? // A/B/C/其他，仅展示，不参与唯一键
+  sourceFileName String?
+  pageCount      Int      @default(0)
+  extractMode    String   @default("text") // text | ocr
+  rawText        String // 整卷原文，可重新切分
+  materialsText  String   @default("") // 作答要求之前的正文
+  splitWarnings  String[] @default([])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions ShenlunPaperQuestion[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("user_shenlun_paper")
+}
+
+model ShenlunPaperQuestion {
+  id              String   @id @default(uuid())
+  paperId         String
+  questionNumber  Int
+  questionText    String
+  questionType    String   @default("其他")
+  score           Int?
+  wordLimit       String?
+  answerText      String?
+  answerCharCount Int      @default(0)
+  answerStatus    String   @default("pending") // pending | generating | ready | failed
+  answerError     String?
+  generatedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  paper ShenlunPaper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@unique([paperId, questionNumber])
+  @@index([paperId, questionNumber])
+  @@map("user_shenlun_paper_question")
 }

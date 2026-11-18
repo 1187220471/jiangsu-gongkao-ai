@@ -4,6 +4,7 @@ import * as crypto from 'crypto'
 import * as https from 'https'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 // 阿里云 OCR 手写识别 API 签名
 function makeAliyunSignature(params: Record<string, string>, secret: string): string {
@@ -88,6 +89,9 @@ async function callAliyunOCR(imageBuffer: Buffer): Promise<string> {
       }
     )
 
+    req.setTimeout(25000, () => {
+      req.destroy(new Error('OCR_TIMEOUT'))
+    })
     req.on('error', reject)
     req.write(imageBuffer)
     req.end()
@@ -121,8 +125,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '图片数据为空' }, { status: 400 })
     }
 
-    if (imageBuffer.length > 10 * 1024 * 1024) {
-      return NextResponse.json({ error: '图片大小不能超过 10MB' }, { status: 400 })
+    if (imageBuffer.length > 4 * 1024 * 1024) {
+      return NextResponse.json({ error: '单页图片不能超过 4MB，请降低清晰度后重试' }, { status: 400 })
     }
 
     // 调用阿里云 OCR 手写识别
@@ -132,6 +136,25 @@ export async function POST(request: Request) {
   } catch (error) {
     const errorId = `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     console.error(`[${errorId}] OCR error:`, error)
+
+    const detail = error instanceof Error ? error.message : ''
+    if (/InvalidAccessKeyId|access key is disabled/i.test(detail)) {
+      return NextResponse.json(
+        {
+          error: 'OCR 服务凭证无效：阿里云 AccessKey 已被禁用，请更新配置后重试',
+          code: 'OCR_CREDENTIAL',
+          errorId,
+        },
+        { status: 503 }
+      )
+    }
+    if (/OCR_TIMEOUT/.test(detail)) {
+      return NextResponse.json(
+        { error: '单页识别超时，请降低图片清晰度后重试', code: 'OCR_TIMEOUT', errorId },
+        { status: 504 }
+      )
+    }
+
     return NextResponse.json(
       { error: '识别失败，请稍后重试', errorId },
       { status: 500 }

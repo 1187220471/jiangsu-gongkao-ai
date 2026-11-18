@@ -107,6 +107,35 @@ export async function deductQuota(userId: string, costInPoints: number = 1): Pro
 }
 
 /**
+ * 退回额度
+ * 仅用于「已扣费但 AI 未产出」的补偿场景（超时 / 5xx / 空返回）。
+ * 邀请用户不涉及扣费，直接跳过。
+ */
+export async function refundQuota(userId: string, costInPoints: number = 1): Promise<void> {
+  if (costInPoints <= 0) return
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      accessLevel: true,
+      accessExpire: true,
+    },
+  })
+
+  if (!user) return
+
+  const now = new Date()
+  if (user.accessLevel !== 'none' && user.accessExpire && user.accessExpire > now) {
+    return
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { dailyFreeCount: { increment: costInPoints * SCALE } },
+  })
+}
+
+/**
  * 获取用户额度信息（用于前端展示）
  */
 export async function getQuotaInfo(userId: string) {
