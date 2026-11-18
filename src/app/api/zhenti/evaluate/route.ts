@@ -2,10 +2,13 @@ import { NextResponse } from 'next/server'
 import { evaluateAnswer, generateReferenceAnswer } from '@/lib/ai'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
-import { checkQuota, deductQuota } from '@/lib/quota'
+import { checkQuota, deductQuota, refundQuota } from '@/lib/quota'
 
 // 强制动态：避免边缘缓存导致额度/记录异常
 export const dynamic = 'force-dynamic'
+
+// Vercel 函数执行上限（AI 批改可能超过默认值）
+export const maxDuration = 60
 
 // 真题 questionType 字符串 → 内部 enum 映射（供 evaluate prompt 使用）
 const TYPE_MAP: Record<string, string> = {
@@ -25,6 +28,8 @@ function normalizeType(raw: string | null | undefined): string {
 }
 
 export async function POST(request: Request) {
+  let chargedUserId: string | null = null
+
   try {
     const auth = requireAuth(request)
     if (!auth.success) {
@@ -65,6 +70,7 @@ export async function POST(request: Request) {
 
     // 扣额度（邀请用户自动跳过）
     await deductQuota(auth.userId, 1)
+    chargedUserId = auth.userId
 
     // 真题自带 finalAnswer 作参考答案；为空时兜底生成（不额外扣次）
     let finalReferenceAnswer = (referenceAnswer || '').trim()
@@ -105,6 +111,9 @@ export async function POST(request: Request) {
       remainingFree: Math.max(0, quota.remainingFree - 1),
     })
   } catch (error) {
+    if (chargedUserId) {
+      await refundQuota(chargedUserId, 1).catch(() => undefined)
+    }
     const errorId = `err_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
     console.error(`[${errorId}] zhenti evaluate error:`, error)
     return NextResponse.json(

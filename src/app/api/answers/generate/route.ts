@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server'
 import { generateReferenceAnswer } from '@/lib/ai'
 import { requireAuth } from '@/lib/auth'
-import { checkQuota, deductQuota } from '@/lib/quota'
+import { checkQuota, deductQuota, refundQuota } from '@/lib/quota'
+
+export const maxDuration = 60
 
 export async function POST(request: Request) {
+  let chargedUserId: string | null = null
+
   try {
     const auth = requireAuth(request)
     if (!auth.success) {
@@ -30,6 +34,7 @@ export async function POST(request: Request) {
 
     // 扣除额度
     await deductQuota(auth.userId)
+    chargedUserId = auth.userId
 
     const answer = await generateReferenceAnswer(question)
 
@@ -38,6 +43,9 @@ export async function POST(request: Request) {
       remainingFree: Math.max(0, quota.remainingFree - 1),
     })
   } catch (error) {
+    if (chargedUserId) {
+      await refundQuota(chargedUserId, 1).catch(() => undefined)
+    }
     console.error('Generate answer error:', error)
     return NextResponse.json(
       { error: '生成答案失败，请稍后重试' },

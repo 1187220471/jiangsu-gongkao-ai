@@ -2,11 +2,15 @@ import { NextResponse } from 'next/server'
 import { evaluateShenlunAnswer } from '@/lib/ai'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
-import { checkQuota, deductQuota } from '@/lib/quota'
+import { checkQuota, deductQuota, refundQuota } from '@/lib/quota'
 
 export const dynamic = 'force-dynamic'
+export const maxDuration = 60
 
 export async function POST(request: Request) {
+  let chargedUserId: string | null = null
+  let chargedCost = 0
+
   try {
     const auth = requireAuth(request)
     if (!auth.success) {
@@ -54,6 +58,8 @@ export async function POST(request: Request) {
     }
 
     await deductQuota(auth.userId, cost)
+    chargedUserId = auth.userId
+    chargedCost = cost
 
     const user = await prisma.user.findUnique({
       where: { id: auth.userId },
@@ -93,6 +99,9 @@ export async function POST(request: Request) {
       isInvited,
     })
   } catch (error) {
+    if (chargedUserId && chargedCost > 0) {
+      await refundQuota(chargedUserId, chargedCost).catch(() => undefined)
+    }
     const errorId = `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     console.error(`[${errorId}] Shenlun evaluate error:`, error)
     return NextResponse.json(

@@ -2,9 +2,13 @@ import { NextResponse } from 'next/server'
 import { evaluateAnswer, generateReferenceAnswer } from '@/lib/ai'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
-import { checkQuota, deductQuota } from '@/lib/quota'
+import { checkQuota, deductQuota, refundQuota } from '@/lib/quota'
+
+export const maxDuration = 60
 
 export async function POST(request: Request) {
+  let chargedUserId: string | null = null
+
   try {
     const auth = requireAuth(request)
     if (!auth.success) {
@@ -45,6 +49,7 @@ export async function POST(request: Request) {
 
     // 扣除额度（批改消耗1点）
     await deductQuota(auth.userId, 1)
+    chargedUserId = auth.userId
 
     // 如果没有参考答案，并行生成（让用户在批改后直接看到，不额外消耗次数）
     let finalReferenceAnswer = referenceAnswer || ''
@@ -80,6 +85,9 @@ export async function POST(request: Request) {
       remainingFree: Math.max(0, quota.remainingFree - 1),
     })
   } catch (error) {
+    if (chargedUserId) {
+      await refundQuota(chargedUserId, 1).catch(() => undefined)
+    }
     const errorId = `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     console.error(`[${errorId}] Evaluate error:`, error)
     return NextResponse.json(

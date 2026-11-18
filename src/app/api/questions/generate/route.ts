@@ -8,6 +8,9 @@ import { checkQuota, deductQuota } from '@/lib/quota'
 // 增大到25以减少短周期内重复（原为10，社会现象类主题池有40+个）
 const RECENT_TOPICS_LIMIT = 25
 
+// Vercel 函数执行上限（AI 出题可能超过默认值）
+export const maxDuration = 60
+
 export async function POST(request: Request) {
   try {
     const auth = requireAuth(request)

@@ -4,6 +4,9 @@ import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth'
 import { checkAccess } from '@/lib/quota'
 
+// Vercel 函数执行上限（一套题需要多次 AI 调用）
+export const maxDuration = 60
+
 // 套题题型概率配置
 const SET_CONFIG = {
   '3': {
